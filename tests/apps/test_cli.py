@@ -1,0 +1,99 @@
+"""M10 완료 기준: 터미널에서 전체 왕복이 된다."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from junvis.apps.cli.main import main
+
+
+@pytest.fixture()
+def home(tmp_path: Path) -> Path:
+    return tmp_path / "home"
+
+
+@pytest.fixture()
+def project(tmp_path: Path) -> Path:
+    path = tmp_path / "zun-app"
+    path.mkdir()
+
+    def run(*args: str) -> None:
+        subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True)
+
+    run("init", "-q")
+    run("config", "user.email", "zun@example.com")
+    run("config", "user.name", "ZUN")
+    (path / "README.md").write_text("# ZUN App\n\n바이브 코딩 도구\n", encoding="utf-8")
+    (path / "package.json").write_text('{"dependencies":{"next":"15"}}', encoding="utf-8")
+    run("add", ".")
+    run("commit", "-q", "-m", "초기 커밋")
+    return path
+
+
+def cli(home: Path, *args: str) -> int:
+    return main(["--home", str(home), "--offline", *args])
+
+
+def test_full_cli_journey(home: Path, project: Path, capsys) -> None:
+    # 1. 아무것도 없는 상태
+    assert cli(home, "list") == 0
+    assert "등록된 프로젝트가 없습니다" in capsys.readouterr().out
+
+    # 2. 등록 — 등록 이벤트가 비동기 스냅샷 수집을 일으킨다
+    assert cli(home, "add", str(project), "--slug", "zun-app", "--purpose", "바이브 코딩") == 0
+    output = capsys.readouterr().out
+    assert "zun-app" in output
+    assert "Next.js" in output  # package.json에서 감지
+    assert "초기 커밋" in output  # git에서 감지
+
+    # 3. 기억 주입
+    assert cli(home, "remember", "zun-app", "릴스 소재로 좋다") == 0
+
+    # 4. Context Pack
+    assert cli(home, "context", "zun-app") == 0
+    markdown = capsys.readouterr().out
+    assert "## 목적" in markdown
+    assert "바이브 코딩" in markdown
+    assert "릴스 소재로 좋다" in markdown
+
+    # 5. 검색
+    assert cli(home, "search", "바이브") == 0
+    assert "zun-app" in capsys.readouterr().out
+
+    # 6. 상태 점검 — 밀린 이벤트가 없어야 한다
+    assert cli(home, "doctor") == 0
+    doctor = capsys.readouterr().out
+    assert "프로젝트     : 1개" in doctor
+    assert "미처리 이벤트: 0건" in doctor
+    assert "deadletter   : 0건" in doctor
+
+
+def test_search_miss_returns_nonzero(home: Path, project: Path, capsys) -> None:
+    cli(home, "add", str(project), "--slug", "zun-app")
+    capsys.readouterr()
+    assert cli(home, "search", "존재하지않는단어") == 1
+
+
+def test_unknown_project_reports_error(home: Path, capsys) -> None:
+    assert cli(home, "context", "no-such-project") == 1
+    assert "등록되지 않은" in capsys.readouterr().err
+
+
+def test_state_persists_across_invocations(home: Path, project: Path, capsys) -> None:
+    """CLI는 매번 새 프로세스다. 기억이 남아 있어야 의미가 있다."""
+    cli(home, "add", str(project), "--slug", "zun-app")
+    capsys.readouterr()
+
+    assert cli(home, "list") == 0
+    assert "zun-app" in capsys.readouterr().out
+
+
+def test_refresh_all_projects(home: Path, project: Path, capsys) -> None:
+    cli(home, "add", str(project), "--slug", "zun-app")
+    capsys.readouterr()
+
+    assert cli(home, "refresh") == 0  # slug 생략 = 전부
+    assert "zun-app" in capsys.readouterr().out
