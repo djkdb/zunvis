@@ -20,6 +20,7 @@ from junvis.apps.adapters import (
     ProjectContextAdapter,
     ProjectDigestAdapter,
 )
+from junvis.apps.voice_router import VoiceCommandRouter
 from junvis.core.eventbus.bus import DrainReport, EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
 from junvis.core.model.ollama import OllamaAdapter
@@ -78,6 +79,11 @@ from junvis.features.project_brain.infrastructure.sqlite_repository import (
 from junvis.features.project_brain.interface.subscribers import (
     register_subscribers as register_project_subscribers,
 )
+from junvis.features.voice.application.ports import TextToSpeechPort
+from junvis.features.voice.application.use_cases.handle_utterance import HandleUtterance
+from junvis.features.voice.domain.model import WakeWordConfig
+from junvis.features.voice.infrastructure.intent_judge import LlmIntentJudge
+from junvis.features.voice.infrastructure.tts import default_tts
 
 HOME_ENV = "JUNVIS_HOME"
 DEFAULT_HOME = Path.home() / ".junvis"
@@ -126,6 +132,15 @@ class Brief:
 
 
 @dataclass
+class Voice:
+    """voice의 유스케이스 묶음."""
+
+    handle: HandleUtterance
+    tts: TextToSpeechPort
+    config: WakeWordConfig
+
+
+@dataclass
 class Junvis:
     """조립된 JUNVIS 인스턴스."""
 
@@ -139,6 +154,7 @@ class Junvis:
     projects: ProjectBrain
     creator: Creator
     brief: Brief
+    voice: Voice
 
     def drain(self, limit: int = 100) -> DrainReport:
         """미처리 비동기 이벤트를 소비한다. 진입점이 작업 후 호출한다."""
@@ -160,12 +176,13 @@ def build(
     confirmer: ConfirmPort | None = None,
     offline: bool = False,
     model: ModelPort | None = None,
+    tts: TextToSpeechPort | None = None,
 ) -> Junvis:
     """모든 부품을 조립한다.
 
     `offline=True`면 GitHub 어댑터를 끼우지 않는다. 네트워크가 없는 상태를
     예외가 아니라 정상 모드 중 하나로 다룬다.
-    `model`을 주면 그것을 쓴다(테스트는 EchoAdapter를 넣는다).
+    `model`·`tts`를 주면 그것을 쓴다(테스트는 EchoAdapter·NullTts를 넣는다).
     """
     root = resolve_home(home)
     root.mkdir(parents=True, exist_ok=True)
@@ -200,6 +217,7 @@ def build(
         db, project_repository, content_repository, brand_voice, policy, tracer,
         offline=offline,
     )
+    voice = _build_voice(bus, tracer, resolved_model, projects, creator, brief, tts=tts)
 
     register_project_subscribers(bus, projects.refresh)
     register_creator_subscribers(bus, creator.suggest)
@@ -215,6 +233,7 @@ def build(
         projects=projects,
         creator=creator,
         brief=brief,
+        voice=voice,
     )
 
 
@@ -296,3 +315,36 @@ def _build_brief(
             tracer=tracer,
         )
     )
+
+
+def _build_voice(
+    bus,
+    tracer,
+    model: ModelPort,
+    projects: ProjectBrain,
+    creator: Creator,
+    brief: Brief,
+    *,
+    tts: TextToSpeechPort | None,
+) -> Voice:
+    """라우터가 여러 Context를 안다. feature끼리는 여전히 서로를 모른다."""
+    router = VoiceCommandRouter(
+        compose_brief=brief.compose,
+        list_projects=projects.list_all,
+        list_content=creator.list_all,
+        generate_content=creator.generate,
+    )
+    config = WakeWordConfig.with_words(_wake_words())
+    resolved_tts = tts or default_tts()
+    return Voice(
+        handle=HandleUtterance(
+            LlmIntentJudge(model), router, resolved_tts, bus, config=config, tracer=tracer
+        ),
+        tts=resolved_tts,
+        config=config,
+    )
+
+
+def _wake_words() -> tuple[str, ...]:
+    raw = os.environ.get("JUNVIS_WAKE_WORDS", "")
+    return tuple(word.strip() for word in raw.split(",") if word.strip())

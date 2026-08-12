@@ -80,6 +80,40 @@ $ junvis brief
 
 캘린더는 macOS Calendar.app, 뉴스는 Hacker News, 작업 습관은 Trace에서 온다. **어느 하나가 실패해도 나머지는 나온다.**
 
+### 4. Voice — 말을 건다
+
+```
+$ junvis listen
+호출어: 자비스, junvis, jarvis
+
+  (무시: 호출어 없음)
+< 자비스 프로젝트 뭐 있어
+> 프로젝트는 ZUNVIS입니다.
+< 오늘 브리핑                        ← 후속 발화 창: 호출어 없이도 통과
+> 8월 12일 브리핑입니다. 멈춰 있는 작업, ZUNVIS에 커밋되지 않은 변경. …
+```
+
+어려운 부분은 마이크를 읽는 일이 아니라 **언제 반응할지 결정하는 일**이다.
+
+```
+발화 → ① 비어 있나 → ② 내가 방금 말한 것인가(에코) → ③ 호출어가 있나
+     → ④ 진짜 명령인가(소형 로컬 모델) → 실행 → 응답
+```
+
+①~③은 모델 없이 결정적으로 판정된다. ④만 `ModelRole.FAST`를 쓴다 — 이 판정에 큰 모델을 부르면 말 한마디마다 몇 초씩 기다리게 된다.
+
+**무엇을 실행할지는 LLM에게 묻지 않는다.** 음성은 오인식이 잦은 입력이라, 여기에 LLM 라우팅까지 얹으면 설명할 수 없는 층이 두 개가 된다. "명령인가 아닌가"만 모델에게 묻고 라우팅은 읽을 수 있는 규칙으로 둔다.
+
+```bash
+junvis listen                 # 마이크 (sox + whisper-cli 필요)
+junvis listen --stdin         # 텍스트 입력 — 어디서나 동작
+junvis say "안녕하세요"        # TTS 확인
+```
+
+`--stdin`이 장식이 아닌 이유: 어떤 STT를 쓰든 파이프로 연결하면 JUNVIS가 동작한다.
+
+> **상시 대기 마이크와 온디바이스 Wake word는 아직 없다.** Swift 헬퍼(`junvis-mac`)의 몫이며, 그때 `AudioSourcePort` 구현만 교체하면 판단 파이프라인은 그대로 쓴다.
+
 ### Claude Code에 붙이기
 
 `~/.claude.json` 또는 프로젝트 `.mcp.json`:
@@ -138,16 +172,18 @@ src/junvis/
 │   │   ├── interface/       # MCP 도구 · 이벤트 구독자
 │   │   └── contracts.py     # 다른 feature에 공개하는 전부
 │   ├── creator/             # 같은 구조
-│   └── brief/               # 같은 구조
-└── apps/        # 조립 루트 — cli · mcp_server · adapters
+│   ├── brief/               # 같은 구조
+│   └── voice/               # 같은 구조
+└── apps/        # 조립 루트 — cli · mcp_server · adapters · voice_router
 ```
 
-**feature는 서로를 임포트하지 않는다.** 그런데도 프로젝트를 등록하면 릴스 제안이 생기고, 브리핑은 세 곳의 데이터를 모은다.
+**feature는 서로를 임포트하지 않는다.** 그런데도 프로젝트를 등록하면 릴스 제안이 생기고, 브리핑은 세 곳의 데이터를 모으고, 음성 명령은 셋 중 무엇이든 실행한다.
 
 - `project_brain` ↔ `creator`: Event Bus (`project.registered` → 릴스 제안)
 - `brief` → 나머지: 자기 입력 형태를 스스로 정의하고 `apps/adapters.py`가 채운다
+- `voice` → 나머지: 무엇을 실행할지 모른다. `apps/voice_router.py`가 정한다
 
-이 규칙은 import-linter 계약 9개로 CI에서 강제된다.
+이 규칙은 import-linter 계약 10개로 CI에서 강제된다.
 
 의존성은 항상 안쪽을 향한다. 이 규칙은 문서가 아니라 **import-linter 계약으로 강제**된다:
 
@@ -165,6 +201,7 @@ pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증�
 | [`docs/02-ARCHITECTURE.md`](docs/02-ARCHITECTURE.md) | 아키텍처 설계 + MVP 태스크 분해 |
 | [`docs/03-CREATOR-MODE.md`](docs/03-CREATOR-MODE.md) | Creator Mode 설계 + ModelPort |
 | [`docs/04-DAILY-BRIEF.md`](docs/04-DAILY-BRIEF.md) | Daily Brief 설계 + 우선순위 규칙 |
+| [`docs/05-VOICE.md`](docs/05-VOICE.md) | Voice 설계 + 4단 게이트 |
 
 ## 핵심 결정
 

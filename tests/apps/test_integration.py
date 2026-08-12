@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -16,7 +18,32 @@ from junvis.apps.container import Junvis, build
 from junvis.apps.mcp_server.main import collect_tools
 from junvis.core.model.echo import EchoAdapter
 from junvis.features.project_brain.application.dto import RegisterProjectCommand
+from junvis.features.voice.domain.model import ListenerState, Utterance
+from junvis.features.voice.infrastructure.tts import NullTts
 from tests.features.creator.test_infrastructure import VALID_PAYLOAD
+
+
+class ScriptedModel:
+    """요청의 스키마를 보고 알맞은 응답을 돌려주는 테스트용 모델.
+
+    한 컨테이너 안에서 Intent Judge와 대본 생성기가 같은 ModelPort를
+    공유하므로, 고정 응답 하나로는 둘 다 만족시킬 수 없다.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list = []
+        self.judge_verdict = True
+
+    def complete(self, request):
+        from junvis.core.model.ports import ModelResponse
+
+        self.calls.append(request)
+        properties = (request.schema or {}).get("properties", {})
+        if "is_command" in properties:
+            body = json.dumps({"is_command": self.judge_verdict})
+        else:
+            body = json.dumps(VALID_PAYLOAD, ensure_ascii=False)
+        return ModelResponse(text=body, model="scripted")
 
 
 @pytest.fixture()
@@ -26,7 +53,17 @@ def model() -> EchoAdapter:
 
 @pytest.fixture()
 def junvis(tmp_path: Path, model: EchoAdapter) -> Junvis:
-    container = build(tmp_path / "home", offline=True, model=model)
+    container = build(tmp_path / "home", offline=True, model=model, tts=NullTts())
+    yield container
+    container.close()
+
+
+@pytest.fixture()
+def talking(tmp_path: Path) -> Junvis:
+    """음성 경로용 컨테이너. 판정과 생성을 모두 지원하는 모델을 쓴다."""
+    container = build(
+        tmp_path / "voice-home", offline=True, model=ScriptedModel(), tts=NullTts()
+    )
     yield container
     container.close()
 
@@ -274,6 +311,104 @@ def test_offline_mode_skips_news(junvis) -> None:
     """offline=True면 뉴스 어댑터를 아예 끼우지 않는다."""
     titles = [s.title for s in junvis.brief.compose().sections]
     assert "AI 소식" not in titles
+
+
+# -- Voice -------------------------------------------------------------------
+
+
+def say(junvis: Junvis, text: str, state: ListenerState | None = None):
+    return junvis.voice.handle(
+        Utterance(text=text, heard_at=datetime(2026, 8, 12, 9, 0, tzinfo=timezone.utc)),
+        state or ListenerState(),
+    )
+
+
+def test_voice_brief_command(talking, project) -> None:
+    talking.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    talking.drain()
+
+    outcome = say(talking, "자비스 오늘 브리핑")
+
+    assert outcome.acted
+    assert "브리핑입니다" in outcome.response
+    assert talking.voice.tts.spoken == [outcome.response]
+
+
+def test_voice_project_command(talking, project) -> None:
+    talking.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    talking.drain()
+
+    assert "릴스 편집기" in say(talking, "자비스 프로젝트 뭐 있어").response
+
+
+def test_voice_project_command_with_nothing_registered(talking) -> None:
+    assert "없습니다" in say(talking, "자비스 프로젝트 목록").response
+
+
+def test_voice_content_command_fills_a_pending_suggestion(talking, project) -> None:
+    talking.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    talking.drain()
+
+    outcome = say(talking, "자비스 릴스 하나 만들자")
+
+    assert "기획을 만들었습니다" in outcome.response
+    assert talking.creator.list_all(status="drafted")
+
+
+def test_voice_content_command_with_an_explicit_subject(talking) -> None:
+    outcome = say(talking, "자비스 MCP 서버 만들기 릴스 만들어줘")
+
+    assert "기획을 만들었습니다" in outcome.response
+    drafted = talking.creator.list_all(status="drafted")
+    assert drafted[0].subject == "MCP 서버 만들기"
+
+
+def test_voice_unknown_command(talking) -> None:
+    from junvis.apps.voice_router import UNKNOWN_RESPONSE
+
+    assert say(talking, "자비스 우주선 발사해").response == UNKNOWN_RESPONSE
+
+
+def test_voice_ignores_speech_without_a_wake_word(talking) -> None:
+    outcome = say(talking, "오늘 점심 뭐 먹지")
+    assert not outcome.acted
+    assert talking.voice.tts.spoken == []
+
+
+def test_voice_respects_the_intent_judge(talking) -> None:
+    talking.model.judge_verdict = False
+    outcome = say(talking, "자비스 어 잠깐만")
+    assert not outcome.acted
+
+
+def test_voice_full_conversation_with_follow_up(talking, project) -> None:
+    """호출어 → 응답 → 호출어 없는 후속 명령."""
+    talking.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    talking.drain()
+
+    first = say(talking, "자비스 오늘 브리핑")
+    second = say(talking, "프로젝트 목록", first.state)
+
+    assert first.acted and second.acted
+    assert "릴스 편집기" in second.response
+    assert len(talking.voice.tts.spoken) == 2
+
+
+def test_voice_command_publishes_an_event(talking) -> None:
+    seen = []
+    talking.bus.subscribe("voice.command_received", lambda e: seen.append(e.payload))
+
+    say(talking, "자비스 프로젝트 목록")
+
+    assert seen[0]["text"] == "프로젝트 목록"
 
 
 def test_every_use_case_leaves_a_trace(junvis) -> None:

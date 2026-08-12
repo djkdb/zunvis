@@ -180,3 +180,42 @@ def test_brief_reports_projects_and_ideas(home: Path, project: Path, capsys) -> 
 def test_brief_notify_does_not_fail_off_macos(home: Path, capsys) -> None:
     """알림 전송 실패로 브리핑이 실패하지는 않는다."""
     assert cli(home, "brief", "--notify") == 0
+
+
+# -- Voice -------------------------------------------------------------------
+
+
+def test_listen_over_stdin(home: Path, project: Path, monkeypatch, capsys) -> None:
+    """오디오 스택 없이도 판단 파이프라인 전체가 동작한다."""
+    import io
+    import sys
+
+    cli(home, "add", str(project), "--slug", "zun-app", "--name", "ZUN App")
+    capsys.readouterr()
+
+    # Ollama가 없으므로 Intent Judge는 fail-open으로 통과한다.
+    monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:1")
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO("점심 뭐 먹지\n자비스 프로젝트 목록\n")
+    )
+
+    assert cli(home, "listen", "--stdin", "--quiet") == 0
+    captured = capsys.readouterr()
+
+    assert "ZUN App" in captured.out  # 명령이 실행됐다
+    assert "호출어 없음" in captured.err  # 첫 줄은 무시됐다
+
+
+def test_say_off_macos_reports_failure(home: Path, capsys) -> None:
+    assert cli(home, "say", "안녕하세요") == 1
+    assert "소리를 내지 못했습니다" in capsys.readouterr().err
+
+
+def test_listen_without_audio_tools_explains_what_is_missing(
+    home: Path, capsys
+) -> None:
+    """말을 걸고 나서 도구가 없다는 걸 알면 늦다."""
+    assert cli(home, "listen") == 1
+    error = capsys.readouterr().err
+    assert "brew install" in error or "Whisper 모델" in error
+    assert "--stdin" in error or "Whisper 모델" in error

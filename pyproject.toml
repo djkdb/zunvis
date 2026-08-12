@@ -52,6 +52,7 @@ containers = [
     "junvis.features.project_brain",
     "junvis.features.creator",
     "junvis.features.brief",
+    "junvis.features.voice",
 ]
 layers = ["interface", "infrastructure", "application", "domain"]
 
@@ -62,6 +63,7 @@ source_modules = [
     "junvis.features.project_brain.domain",
     "junvis.features.creator.domain",
     "junvis.features.brief.domain",
+    "junvis.features.voice.domain",
     "junvis.core.domain",
 ]
 forbidden_modules = [
@@ -79,6 +81,7 @@ source_modules = [
     "junvis.features.project_brain.application",
     "junvis.features.creator.application",
     "junvis.features.brief.application",
+    "junvis.features.voice.application",
 ]
 forbidden_modules = ["sqlite3", "subprocess", "urllib", "mcp"]
 
@@ -123,3 +126,14 @@ name = "9. creator는 brief를 모른다"
 type = "forbidden"
 source_modules = ["junvis.features.creator"]
 forbidden_modules = ["junvis.features.brief"]
+
+# voice는 무엇을 실행할지 모른다. 라우팅은 조립 루트(apps/voice_router.py)의 일이다.
+[[tool.importlinter.contracts]]
+name = "10. voice는 다른 feature를 전혀 임포트하지 않는다"
+type = "forbidden"
+source_modules = ["junvis.features.voice"]
+forbidden_modules = [
+    "junvis.features.project_brain",
+    "junvis.features.creator",
+    "junvis.features.brief",
+]
