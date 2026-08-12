@@ -22,6 +22,7 @@ from junvis.apps.container import Junvis, build
 from junvis.core.domain.errors import JunvisError
 from junvis.features.brief.interface.mcp_tools import build_brief_tools
 from junvis.features.creator.interface.mcp_tools import build_creator_tools
+from junvis.features.memory.interface.mcp_tools import build_memory_tools
 from junvis.features.project_brain.interface.mcp_tools import ToolSpec, build_project_tools
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,10 @@ INSTRUCTIONS = (
     "- 사용자가 릴스·캐러셀 등 ZUN 브랜드 콘텐츠를 만들고 싶어 하면 "
     "junvis_content_create를 써라. project 인자를 주면 그 프로젝트의 실제 "
     "정보를 근거로 기획한다. junvis_content_list의 suggested 상태는 아직 "
-    "손대지 않은 제안이다."
+    "손대지 않은 제안이다.\n"
+    "- 사용자가 선호·규칙·습관을 말하면 junvis_remember로 남겨라. 다음에도 "
+    "유효한 사실만 남기고, 지나가는 말은 남기지 않는다. 작업 전에 "
+    "junvis_recall로 관련 기억을 확인하면 같은 말을 두 번 듣지 않는다."
 )
 
 
@@ -61,6 +65,13 @@ def collect_tools(container: Junvis) -> list[ToolSpec]:
             update_brand_voice=container.creator.update_brand_voice,
         ),
         *build_brief_tools(compose=container.brief.compose),
+        *build_memory_tools(
+            remember=container.memory.remember,
+            recall=container.memory.recall,
+            list_memories=container.memory.list_all,
+            forget=container.memory.forget,
+            pin=container.memory.pin,
+        ),
     ]
 
 

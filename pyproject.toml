@@ -53,6 +53,7 @@ containers = [
     "junvis.features.creator",
     "junvis.features.brief",
     "junvis.features.voice",
+    "junvis.features.memory",
 ]
 layers = ["interface", "infrastructure", "application", "domain"]
 
@@ -64,6 +65,7 @@ source_modules = [
     "junvis.features.creator.domain",
     "junvis.features.brief.domain",
     "junvis.features.voice.domain",
+    "junvis.features.memory.domain",
     "junvis.core.domain",
 ]
 forbidden_modules = [
@@ -82,6 +84,7 @@ source_modules = [
     "junvis.features.creator.application",
     "junvis.features.brief.application",
     "junvis.features.voice.application",
+    "junvis.features.memory.application",
 ]
 forbidden_modules = ["sqlite3", "subprocess", "urllib", "mcp"]
 
@@ -136,4 +139,23 @@ forbidden_modules = [
     "junvis.features.project_brain",
     "junvis.features.creator",
     "junvis.features.brief",
+    "junvis.features.memory",
 ]
+
+# memory는 누가 자기를 쓰는지 모른다. 이벤트 학습도 조립 루트가 붙인다.
+[[tool.importlinter.contracts]]
+name = "11. memory는 다른 feature를 전혀 임포트하지 않는다"
+type = "forbidden"
+source_modules = ["junvis.features.memory"]
+forbidden_modules = [
+    "junvis.features.project_brain",
+    "junvis.features.creator",
+    "junvis.features.brief",
+    "junvis.features.voice",
+]
+
+[[tool.importlinter.contracts]]
+name = "12. creator·brief는 memory를 모른다"
+type = "forbidden"
+source_modules = ["junvis.features.creator", "junvis.features.brief"]
+forbidden_modules = ["junvis.features.memory"]

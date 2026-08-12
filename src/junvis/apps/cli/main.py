@@ -125,6 +125,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--notify", action="store_true", help="macOS 알림으로 요약 한 줄 (launchd용)"
     )
 
+    # -- Personal Memory ----------------------------------------------------
+    memo = sub.add_parser("memo", help="기억해둘 사실을 남긴다")
+    memo.add_argument("text")
+    memo.add_argument(
+        "--scope", choices=["user", "project", "content"], default="user"
+    )
+    memo.add_argument("--subject", default="", help="프로젝트 slug 등")
+    memo.add_argument("--pin", action="store_true", help="항상 우선 주입")
+
+    memos = sub.add_parser("memos", help="기억을 회상하거나 전부 나열한다")
+    memos.add_argument("query", nargs="?", default="")
+    memos.add_argument("--scope", choices=["user", "project", "content"])
+    memos.add_argument("--limit", type=int, default=50)
+
+    forget = sub.add_parser("forget", help="기억을 지운다")
+    forget.add_argument("id")
+
     # -- Voice --------------------------------------------------------------
     listen = sub.add_parser("listen", help="음성으로 명령을 받는다")
     listen.add_argument(
@@ -321,6 +338,64 @@ def _cmd_brief(args, junvis: Junvis) -> int:
     return 0
 
 
+# -- Personal Memory ---------------------------------------------------------
+
+
+def _print_memory(view) -> None:
+    marks = []
+    if view.pinned:
+        marks.append("고정")
+    if view.scope != "user":
+        marks.append(view.scope)
+    if view.subject:
+        marks.append(view.subject)
+    suffix = f"  [{', '.join(marks)}]" if marks else ""
+    print(f"- {view.text}{suffix}  ({view.short_id})")
+
+
+def _cmd_memo(args, junvis: Junvis) -> int:
+    from junvis.features.memory.domain.model import MemoryScope
+
+    view = junvis.memory.remember(
+        args.text,
+        scope=MemoryScope(args.scope),
+        subject=args.subject,
+        pinned=args.pin,
+    )
+    print(f"기억했습니다. ({view.short_id})")
+    return 0
+
+
+def _cmd_memos(args, junvis: Junvis) -> int:
+    from junvis.features.memory.domain.model import MemoryScope
+
+    views = junvis.memory.recall(
+        args.query,
+        scope=MemoryScope(args.scope) if args.scope else None,
+        limit=args.limit,
+    )
+    if not views:
+        print("기억나는 것이 없습니다.")
+        return 0
+    for view in views:
+        _print_memory(view)
+    return 0
+
+
+def _cmd_forget(args, junvis: Junvis) -> int:
+    memory_id = args.id
+    if len(memory_id) < 32:
+        matches = [v.id for v in junvis.memory.list_all(limit=500) if v.id.startswith(memory_id)]
+        if len(matches) > 1:
+            print(f"오류: id '{memory_id}'가 {len(matches)}건과 겹칩니다.", file=sys.stderr)
+            return 1
+        if matches:
+            memory_id = matches[0]
+    view = junvis.memory.forget(memory_id)
+    print(f"잊었습니다: {view.text}")
+    return 0
+
+
 # -- Voice -------------------------------------------------------------------
 
 
@@ -422,6 +497,9 @@ _HANDLERS = {
     "published": _cmd_published,
     "brand": _cmd_brand,
     "brief": _cmd_brief,
+    "memo": _cmd_memo,
+    "memos": _cmd_memos,
+    "forget": _cmd_forget,
     "listen": _cmd_listen,
     "say": _cmd_say,
     "drain": _cmd_drain,

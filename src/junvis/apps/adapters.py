@@ -13,6 +13,8 @@ from datetime import datetime
 from junvis.core.domain.errors import JunvisError
 from junvis.features.brief.domain.digests import ContentDigest, ContentLine, ProjectDigest
 from junvis.features.creator.application.use_cases.queries import GetBrandVoice, ListContent
+from junvis.features.memory.application.use_cases.queries import BuildDigest
+from junvis.features.memory.domain.model import MemoryScope
 from junvis.features.project_brain.application.use_cases.load_context import (
     LoadProjectContext,
 )
@@ -101,6 +103,23 @@ class ContentDigestAdapter:
                 if (now - item.published_at).days <= RECENT_PUBLISH_WINDOW_DAYS
             ),
             has_ever_published=bool(published),
+        )
+
+
+class ContentMemoryAdapter:
+    """`creator`의 `MemoryDigestPort` 자리에 `memory`를 끼운다.
+
+    콘텐츠 스코프로 좁힌다. 프로젝트 기억이 릴스 프롬프트에 섞이면
+    예산만 축내고 결과가 나빠진다.
+    """
+
+    def __init__(self, build_digest: BuildDigest) -> None:
+        self._build_digest = build_digest
+
+    def digest(self, *, budget_chars: int = 600) -> str:
+        # 질의를 비워 스코프 전체를 가져온다. 규칙은 검색 대상이 아니다.
+        return self._build_digest(
+            "", scope=MemoryScope.CONTENT, budget_chars=budget_chars
         )
 
 

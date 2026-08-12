@@ -16,6 +16,7 @@ __all__ = [
     "GenerationRequest",
     "ScriptGeneratorPort",
     "ProjectContextPort",
+    "MemoryDigestPort",
 ]
 
 
@@ -26,6 +27,8 @@ class GenerationRequest:
     brand_voice: BrandVoice
     project_context: str | None = None
     direction: str = ""
+    #: 사용자가 기억시킨 규칙들. 압축된 몇 줄만 온다.
+    memory_digest: str = ""
 
 
 class ScriptGeneratorPort(Protocol):
@@ -48,3 +51,18 @@ class ProjectContextPort(Protocol):
 
     def get_context(self, slug: str, *, budget_tokens: int = 800) -> str | None:
         """모르는 프로젝트면 None. 없다고 콘텐츠 생성이 실패하면 안 된다."""
+
+
+class MemoryDigestPort(Protocol):
+    """사용자가 기억시킨 콘텐츠 규칙을 가져온다.
+
+    같은 방식으로 `memory`도 임포트하지 않는다. 조립 루트가 채운다.
+
+    **검색이 아니라 조회다.** 주제로 검색하면 "썸네일은 3단어 이하" 같은
+    전역 규칙이 주제와 겹치지 않을 때 사라진다. 규칙은 주제와 무관하게
+    항상 적용되어야 하므로 콘텐츠 스코프 전체를 가져온다. 양이 문제가
+    되지 않는 이유는 `digest()`가 줄 수와 예산으로 이미 막고 있어서다.
+    """
+
+    def digest(self, *, budget_chars: int = 600) -> str:
+        """압축된 몇 줄. 없으면 빈 문자열."""

@@ -14,6 +14,7 @@ from junvis.features.creator.application.dto import ContentDetail
 from junvis.features.creator.application.ports import (
     ClockPort,
     GenerationRequest,
+    MemoryDigestPort,
     ProjectContextPort,
     ScriptGeneratorPort,
     SystemClock,
@@ -39,6 +40,7 @@ class GenerateContent(TracedUseCase):
         unit_of_work: UnitOfWorkPort,
         *,
         project_context: ProjectContextPort | None = None,
+        memory: MemoryDigestPort | None = None,
         policy: PolicyEngine | None = None,
         clock: ClockPort | None = None,
         tracer: TraceRecorder | None = None,
@@ -50,6 +52,7 @@ class GenerateContent(TracedUseCase):
         self._bus = bus
         self._uow = unit_of_work
         self._project_context = project_context
+        self._memory = memory
         self._policy = policy
         self._clock = clock or SystemClock()
 
@@ -75,8 +78,12 @@ class GenerateContent(TracedUseCase):
             )
 
             context = self._load_context(idea.source_project_slug or project_slug)
+            memory = self._load_memory()
             if handle is not None:
-                handle.annotate(has_project_context=context is not None)
+                handle.annotate(
+                    has_project_context=context is not None,
+                    has_memory=bool(memory),
+                )
 
             script = self._generator.generate(
                 GenerationRequest(
@@ -85,6 +92,7 @@ class GenerateContent(TracedUseCase):
                     brand_voice=self._brand_voice.get(),
                     project_context=context,
                     direction=direction,
+                    memory_digest=memory,
                 )
             )
             idea.attach_script(script, now=self._clock.now())
@@ -125,3 +133,16 @@ class GenerateContent(TracedUseCase):
         if not slug or self._project_context is None:
             return None
         return self._project_context.get_context(slug, budget_tokens=PROJECT_CONTEXT_BUDGET)
+
+    def _load_memory(self) -> str:
+        """기억시킨 콘텐츠 규칙을 압축해서 가져온다.
+
+        주제를 질의로 넘기지 않는다 — 규칙은 주제와 무관하게 적용된다.
+        기억을 못 읽는다고 콘텐츠 생성이 실패하면 안 된다.
+        """
+        if self._memory is None:
+            return ""
+        try:
+            return self._memory.digest()
+        except Exception:  # pragma: no cover - 방어적
+            return ""

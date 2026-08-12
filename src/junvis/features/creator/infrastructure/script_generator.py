@@ -107,6 +107,14 @@ class LlmScriptGenerator:
             "브랜드 성향:",
             request.brand_voice.describe(),
         ]
+        if request.memory_digest:
+            # 사용자가 명시적으로 기억시킨 규칙. 브랜드 성향보다 구체적이므로
+            # 더 강하게 지시한다.
+            parts += [
+                "",
+                "사용자가 기억시킨 규칙 (반드시 지킬 것):",
+                request.memory_digest,
+            ]
         if request.project_context:
             parts += [
                 "",

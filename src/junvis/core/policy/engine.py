@@ -155,6 +155,8 @@ def default_rules() -> tuple[Rule, ...]:
                 "project.remember",
                 "project.refresh",
                 "memory.remember",
+                "memory.forget",
+                "memory.pin",
                 # creator: 전부 로컬 기록이다. JUNVIS는 Instagram에 올리지 않는다.
                 "content.create",
                 "content.dismiss",

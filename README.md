@@ -114,6 +114,26 @@ junvis say "안녕하세요"        # TTS 확인
 
 > **상시 대기 마이크와 온디바이스 Wake word는 아직 없다.** Swift 헬퍼(`junvis-mac`)의 몫이며, 그때 `AudioSourcePort` 구현만 교체하면 판단 파이프라인은 그대로 쓴다.
 
+### 5. Personal Memory — 기억하고 적용한다
+
+```bash
+junvis memo "썸네일 문구는 3단어 이하로" --scope content --pin
+junvis memo "Ollama를 기본 모델로 쓴다"
+junvis memos 썸네일            # 회상
+junvis forget 6925e492
+```
+
+기억은 쌓이기만 하면 죽은 데이터다. **바로 다음 릴스 프롬프트에 실린다.**
+
+```
+$ junvis reel "MCP 서버 만들기"
+  → 프롬프트에 "사용자가 기억시킨 규칙 (반드시 지킬 것): 썸네일 문구는 3단어 이하로"
+```
+
+회상과 주입은 다른 일이다. 회상 결과를 그대로 프롬프트에 부으면 로컬 소형 모델이 무너지므로, `digest()`가 고정된 것 먼저 → 중복 제거 → 점수 순으로 예산 안에 압축한다.
+
+**무엇을 기억하지 않을지가 더 중요하다.** 발행한 콘텐츠와 시작한 프로젝트는 자동으로 기억하지만, 음성 명령은 남기지 않는다 — 말한 것을 전부 저장하면 잡음이 신호를 덮는다.
+
 ### Claude Code에 붙이기
 
 `~/.claude.json` 또는 프로젝트 `.mcp.json`:
@@ -130,14 +150,14 @@ junvis say "안녕하세요"        # TTS 확인
 
 노출되는 도구:
 
-| Project Brain | Creator | Brief |
+| Project Brain | Creator | Brief · Memory |
 |---|---|---|
 | `junvis_project_list` | `junvis_content_create` | `junvis_daily_brief` |
-| `junvis_project_context` | `junvis_content_list` | |
-| `junvis_project_search` | `junvis_content_get` | |
-| `junvis_project_register` | `junvis_content_dismiss` | |
-| `junvis_project_remember` | `junvis_content_published` | |
-| `junvis_project_refresh` | `junvis_brand_voice` | |
+| `junvis_project_context` | `junvis_content_list` | `junvis_remember` |
+| `junvis_project_search` | `junvis_content_get` | `junvis_recall` |
+| `junvis_project_register` | `junvis_content_dismiss` | `junvis_memories` |
+| `junvis_project_remember` | `junvis_content_published` | `junvis_forget` |
+| `junvis_project_refresh` | `junvis_brand_voice` | `junvis_pin_memory` |
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
@@ -173,7 +193,8 @@ src/junvis/
 │   │   └── contracts.py     # 다른 feature에 공개하는 전부
 │   ├── creator/             # 같은 구조
 │   ├── brief/               # 같은 구조
-│   └── voice/               # 같은 구조
+│   ├── voice/               # 같은 구조
+│   └── memory/              # 같은 구조
 └── apps/        # 조립 루트 — cli · mcp_server · adapters · voice_router
 ```
 
@@ -182,8 +203,9 @@ src/junvis/
 - `project_brain` ↔ `creator`: Event Bus (`project.registered` → 릴스 제안)
 - `brief` → 나머지: 자기 입력 형태를 스스로 정의하고 `apps/adapters.py`가 채운다
 - `voice` → 나머지: 무엇을 실행할지 모른다. `apps/voice_router.py`가 정한다
+- `memory` → 나머지: 누가 자기를 쓰는지 모른다. `apps/memory_learning.py`가 이벤트를 기억으로 옮긴다
 
-이 규칙은 import-linter 계약 10개로 CI에서 강제된다.
+이 규칙은 import-linter 계약 12개로 CI에서 강제된다.
 
 의존성은 항상 안쪽을 향한다. 이 규칙은 문서가 아니라 **import-linter 계약으로 강제**된다:
 
@@ -202,11 +224,12 @@ pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증�
 | [`docs/03-CREATOR-MODE.md`](docs/03-CREATOR-MODE.md) | Creator Mode 설계 + ModelPort |
 | [`docs/04-DAILY-BRIEF.md`](docs/04-DAILY-BRIEF.md) | Daily Brief 설계 + 우선순위 규칙 |
 | [`docs/05-VOICE.md`](docs/05-VOICE.md) | Voice 설계 + 4단 게이트 |
+| [`docs/06-MEMORY.md`](docs/06-MEMORY.md) | Personal Memory 설계 + digest 압축 |
 
 ## 핵심 결정
 
 - **도구 표준은 MCP 하나.** 자체 도구 포맷을 만들지 않는다. JUNVIS는 MCP Host이자 Server다.
-- **기억은 2층.** 구조적 기억(프로젝트·커밋·캘린더)은 자체 SQLite가 소유하고, 서술적 기억은 Mem0에 위임한다.
+- **기억은 2층.** 구조적 기억(프로젝트·커밋·캘린더)과 서술적 기억(선호·규칙) 모두 자체 SQLite가 소유한다. 의미 검색이 필요해지면 `MemoryRepository` 뒤에 Mem0를 끼운다 — [이유](docs/06-MEMORY.md#0-원래-계획에서-바꾼-것).
 - **모든 부작용은 PolicyEngine을 통과한다.** SAFE/LOW는 자동, MEDIUM/HIGH는 확인, FORBIDDEN은 거부.
 - **모든 실행은 Trace를 남긴다.** Trace가 개인화의 원재료다.
 - **로컬 우선.** Ollama가 기본이고 클라우드는 명시적 폴백이다.

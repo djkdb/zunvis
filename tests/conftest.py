@@ -6,13 +6,16 @@ from junvis.core.eventbus.bus import EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
 from junvis.core.persistence import CORE_MIGRATIONS, MEMORY, Database
 from junvis.features.creator.infrastructure import CREATOR_MIGRATIONS
+from junvis.features.memory.infrastructure import MEMORY_MIGRATIONS
 from junvis.features.project_brain.infrastructure import PROJECT_BRAIN_MIGRATIONS
 
 
 @pytest.fixture()
 def db() -> Database:
     database = Database(MEMORY)
-    database.migrate(CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS, CREATOR_MIGRATIONS)
+    database.migrate(
+        CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS, CREATOR_MIGRATIONS, MEMORY_MIGRATIONS
+    )
     yield database
     database.close()
 

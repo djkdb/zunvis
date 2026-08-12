@@ -41,6 +41,7 @@ def test_migration_names_are_namespaced_by_owner(db: Database) -> None:
         "core/001_core.sql",
         "project_brain/001_project_brain.sql",
         "creator/001_creator.sql",
+        "memory/001_memory.sql",
     }
 
 

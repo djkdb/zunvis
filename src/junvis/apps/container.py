@@ -17,9 +17,11 @@ from pathlib import Path
 from junvis.apps.adapters import (
     BrandInterestsAdapter,
     ContentDigestAdapter,
+    ContentMemoryAdapter,
     ProjectContextAdapter,
     ProjectDigestAdapter,
 )
+from junvis.apps.memory_learning import register_learning
 from junvis.apps.voice_router import VoiceCommandRouter
 from junvis.core.eventbus.bus import DrainReport, EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
@@ -54,6 +56,20 @@ from junvis.features.creator.infrastructure.sqlite_repository import (
 )
 from junvis.features.creator.interface.subscribers import (
     register_subscribers as register_creator_subscribers,
+)
+from junvis.features.memory.application.use_cases.queries import (
+    BuildDigest,
+    ListMemories,
+    RecallMemories,
+)
+from junvis.features.memory.application.use_cases.remember import (
+    ForgetFact,
+    PinFact,
+    RememberFact,
+)
+from junvis.features.memory.infrastructure import MEMORY_MIGRATIONS
+from junvis.features.memory.infrastructure.sqlite_repository import (
+    SqliteMemoryRepository,
 )
 from junvis.features.project_brain.application.use_cases.load_context import (
     LoadProjectContext,
@@ -132,6 +148,18 @@ class Brief:
 
 
 @dataclass
+class Memory:
+    """memory의 유스케이스 묶음."""
+
+    remember: RememberFact
+    recall: RecallMemories
+    list_all: ListMemories
+    forget: ForgetFact
+    pin: PinFact
+    digest: BuildDigest
+
+
+@dataclass
 class Voice:
     """voice의 유스케이스 묶음."""
 
@@ -155,6 +183,7 @@ class Junvis:
     creator: Creator
     brief: Brief
     voice: Voice
+    memory: Memory
 
     def drain(self, limit: int = 100) -> DrainReport:
         """미처리 비동기 이벤트를 소비한다. 진입점이 작업 후 호출한다."""
@@ -188,7 +217,9 @@ def build(
     root.mkdir(parents=True, exist_ok=True)
 
     db = Database(root / DB_FILENAME)
-    db.migrate(CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS, CREATOR_MIGRATIONS)
+    db.migrate(
+        CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS, CREATOR_MIGRATIONS, MEMORY_MIGRATIONS
+    )
 
     outbox = SqliteOutbox(db)
     bus = EventBus(outbox)
@@ -205,13 +236,16 @@ def build(
     content_repository = SqliteContentRepository(db)
     brand_voice = SqliteBrandVoiceStore(db)
 
+    memory_repository = SqliteMemoryRepository(db)
+
     resolved_model = model or OllamaAdapter()
+    memory = _build_memory(memory_repository, bus, policy, tracer, unit_of_work)
     projects = _build_project_brain(
         project_repository, bus, policy, tracer, unit_of_work, offline=offline
     )
     creator = _build_creator(
         content_repository, brand_voice, bus, policy, tracer,
-        unit_of_work, projects, resolved_model,
+        unit_of_work, projects, memory, resolved_model,
     )
     brief = _build_brief(
         db, project_repository, content_repository, brand_voice, policy, tracer,
@@ -221,6 +255,7 @@ def build(
 
     register_project_subscribers(bus, projects.refresh)
     register_creator_subscribers(bus, creator.suggest)
+    register_learning(bus, memory.remember)
 
     return Junvis(
         home=root,
@@ -234,6 +269,21 @@ def build(
         creator=creator,
         brief=brief,
         voice=voice,
+        memory=memory,
+    )
+
+
+def _build_memory(repository, bus, policy, tracer, unit_of_work) -> Memory:
+    return Memory(
+        remember=RememberFact(
+            repository, bus, unit_of_work, policy=policy, tracer=tracer
+        ),
+        recall=RecallMemories(repository, unit_of_work, policy=policy, tracer=tracer),
+        list_all=ListMemories(repository, policy=policy, tracer=tracer),
+        forget=ForgetFact(repository, bus, unit_of_work, policy=policy, tracer=tracer),
+        pin=PinFact(repository, unit_of_work, policy=policy, tracer=tracer),
+        # 프롬프트 조립용이라 Trace를 남기지 않는다(brief의 수집 조회와 같은 이유).
+        digest=BuildDigest(repository),
     )
 
 
@@ -266,15 +316,18 @@ def _build_creator(
     tracer,
     unit_of_work,
     projects: ProjectBrain,
+    memory: Memory,
     model: ModelPort,
 ) -> Creator:
     generator = LlmScriptGenerator(model)
-    # creator는 project_brain을 모른다. 여기서 어댑터로 이어 붙인다.
+    # creator는 project_brain도 memory도 모른다. 여기서 어댑터로 이어 붙인다.
     project_context = ProjectContextAdapter(projects.load_context)
     return Creator(
         generate=GenerateContent(
             repository, brand_voice, generator, bus, unit_of_work,
-            project_context=project_context, policy=policy, tracer=tracer,
+            project_context=project_context,
+            memory=ContentMemoryAdapter(memory.digest),
+            policy=policy, tracer=tracer,
         ),
         list_all=ListContent(repository, policy=policy, tracer=tracer),
         get=GetContent(repository, policy=policy, tracer=tracer),

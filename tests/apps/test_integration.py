@@ -313,6 +313,105 @@ def test_offline_mode_skips_news(junvis) -> None:
     assert "AI 소식" not in titles
 
 
+# -- Personal Memory ---------------------------------------------------------
+
+
+def test_remembered_rules_reach_the_content_prompt(junvis, model) -> None:
+    """기억이 어딘가에 쌓이기만 하면 죽은 데이터다. 첫 소비자는 Creator다."""
+    from junvis.features.memory.domain.model import MemoryScope
+
+    junvis.memory.remember(
+        "썸네일 문구는 3단어 이하로", scope=MemoryScope.CONTENT, pinned=True
+    )
+
+    junvis.creator.generate(subject="MCP 서버 만들기")
+
+    prompt = model.calls[0].prompt
+    assert "썸네일 문구는 3단어 이하로" in prompt
+    assert "반드시 지킬 것" in prompt
+
+
+def test_only_content_scoped_memories_reach_the_prompt(junvis, model) -> None:
+    """프로젝트 기억이 릴스 프롬프트에 섞이면 예산만 축낸다."""
+    from junvis.features.memory.domain.model import MemoryScope
+
+    junvis.memory.remember("Supabase를 쓴다", scope=MemoryScope.PROJECT, subject="x")
+    junvis.memory.remember("과장하지 말 것", scope=MemoryScope.CONTENT)
+
+    junvis.creator.generate(subject="주제")
+
+    prompt = model.calls[0].prompt
+    assert "과장하지 말 것" in prompt
+    assert "Supabase" not in prompt
+
+
+def test_content_generation_works_without_any_memory(junvis) -> None:
+    assert junvis.creator.generate(subject="주제").summary.status == "drafted"
+
+
+def test_publishing_content_is_learned(junvis) -> None:
+    detail = junvis.creator.generate(subject="MCP 서버 만들기")
+    junvis.creator.mark_published(detail.summary.id)
+    junvis.drain()
+
+    texts = [view.text for view in junvis.memory.list_all()]
+    assert "「MCP 서버 만들기」 콘텐츠를 발행했다" in texts
+
+
+def test_registering_a_project_is_learned(junvis, project) -> None:
+    junvis.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    junvis.drain()
+
+    remembered = [v for v in junvis.memory.list_all() if v.scope == "project"]
+    assert remembered[0].text == "「릴스 편집기」 프로젝트를 시작했다"
+    assert remembered[0].subject == "reels-editor"
+
+
+def test_repeated_registration_does_not_pile_up_memories(junvis, project) -> None:
+    for _ in range(3):
+        junvis.projects.register(
+            RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+        )
+        junvis.drain()
+
+    assert len([v for v in junvis.memory.list_all() if v.scope == "project"]) == 1
+
+
+def test_voice_commands_are_not_remembered(talking) -> None:
+    """말한 것을 전부 저장하면 잡음이 신호를 덮는다."""
+    say(talking, "자비스 프로젝트 목록")
+    talking.drain()
+
+    assert talking.memory.list_all() == []
+
+
+def test_memory_tools_are_exposed(junvis) -> None:
+    tools = {spec.name: spec for spec in collect_tools(junvis)}
+
+    created = tools["junvis_remember"].handler(
+        {"text": "Ollama를 기본으로 쓴다", "pinned": True}
+    )
+    assert created.data["pinned"] is True
+
+    recalled = tools["junvis_recall"].handler({"query": "Ollama"})
+    assert "Ollama를 기본으로 쓴다" in recalled.text
+
+    forgotten = tools["junvis_forget"].handler({"id": created.data["id"]})
+    assert "잊었습니다" in forgotten.text
+    assert tools["junvis_memories"].handler({}).data["memories"] == []
+
+
+def test_memory_survives_a_restart(tmp_path, model) -> None:
+    home = tmp_path / "memory-home"
+    with build(home, offline=True, model=model) as first:
+        first.memory.remember("썸네일은 3단어 이하", pinned=True)
+
+    with build(home, offline=True, model=model) as second:
+        assert [v.text for v in second.memory.list_all()] == ["썸네일은 3단어 이하"]
+
+
 # -- Voice -------------------------------------------------------------------
 
 
