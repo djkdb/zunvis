@@ -59,6 +59,22 @@ def test_wake_word_is_stripped_from_the_command() -> None:
     assert CONFIG.strip_wake_word(heard("자비스")) == ""
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["준비스 오늘 브리핑", "헤이 준비스 오늘 브리핑", "야 준비스, 오늘 브리핑"],
+)
+def test_junvis_is_a_default_wake_word(text: str) -> None:
+    """이름이 JUNVIS인데 '준비스'로 못 부르면 이상하다."""
+    utterance = heard(text)
+    assert CONFIG.contains_wake_word(utterance) is True
+    # 부름말이 명령에 남으면 라우터가 엉뚱한 규칙에 걸린다
+    assert CONFIG.strip_wake_word(utterance) == "오늘 브리핑"
+
+
+def test_address_prefix_alone_is_not_a_wake_word() -> None:
+    assert CONFIG.contains_wake_word(heard("헤이 거기 잠깐만")) is False
+
+
 def test_custom_wake_words() -> None:
     config = WakeWordConfig.with_words(("준비스",))
     assert config.contains_wake_word(heard("준비스 브리핑")) is True

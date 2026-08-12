@@ -21,7 +21,11 @@ from junvis.core.domain.event import utcnow
 _LATIN_WORD = re.compile(r"[a-z0-9]+")
 _HANGUL = re.compile(r"[가-힣]")
 
-DEFAULT_WAKE_WORDS = ("자비스", "junvis", "jarvis")
+DEFAULT_WAKE_WORDS = ("준비스", "자비스", "junvis", "jarvis")
+
+#: 호출어 앞에 붙는 부름말. 명령 본문이 아니므로 함께 걷어낸다.
+#: "헤이 준비스 브리핑"의 명령은 "헤이 브리핑"이 아니라 "브리핑"이다.
+ADDRESS_PREFIXES = ("헤이", "야", "hey", "ok", "오케이")
 
 #: 에코로 판정할 유사도. 낮추면 사용자가 따라 말할 때도 막힌다.
 DEFAULT_ECHO_THRESHOLD = 0.8
@@ -108,10 +112,14 @@ class WakeWordConfig:
         return False
 
     def strip_wake_word(self, utterance: Utterance) -> str:
-        """명령 본문만 남긴다. 호출어가 명령의 일부로 새어 들어가지 않게."""
+        """명령 본문만 남긴다.
+
+        호출어뿐 아니라 부름말("헤이", "야")도 걷어낸다. 그것이 명령에
+        남으면 라우터가 엉뚱한 규칙에 걸릴 수 있고, 모델에게도 잡음이다.
+        """
         text = utterance.text
-        for wake in self.words:
-            text = re.sub(re.escape(wake), " ", text, flags=re.IGNORECASE)
+        for token in (*self.words, *ADDRESS_PREFIXES):
+            text = re.sub(re.escape(token), " ", text, flags=re.IGNORECASE)
         return re.sub(r"\s+", " ", text).strip(" ,.!?~")
 
 
