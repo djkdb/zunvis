@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from junvis.core.policy.engine import PolicyEngine
 from junvis.core.trace.recorder import TraceRecorder
-from junvis.features.project_brain.application.base import TracedUseCase
+from junvis.core.usecase import TracedUseCase
 from junvis.features.project_brain.domain.context_pack import ContextPack
 from junvis.features.project_brain.domain.errors import ProjectNotFound
 from junvis.features.project_brain.domain.repository import ProjectRepository

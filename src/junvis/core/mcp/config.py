@@ -18,6 +18,14 @@ CONFIG_FILENAME = "mcp.json"
 #: 마지막 호출 뒤 이만큼 지나면 서버 프로세스를 내린다.
 DEFAULT_IDLE_SECONDS = 300
 
+#: 기동 후 MCP 초기화까지 기다리는 한계.
+#: 잘못 설정된 서버가 프로세스로는 뜨지만 MCP로 말하지 않는 경우가 있다
+#: (예: 의존성이 없는 파이썬으로 실행). 이 한계가 없으면 영원히 멈춘다.
+DEFAULT_STARTUP_SECONDS = 30
+
+#: 도구 하나의 실행 한계. 브라우저 조작처럼 느린 작업이 있어 넉넉히 잡는다.
+DEFAULT_CALL_SECONDS = 120
+
 
 class McpConfigError(JunvisError):
     """설정 파일을 읽을 수 없거나 형식이 맞지 않는다."""
@@ -34,6 +42,8 @@ class ServerSpec:
     trusted: bool = False
     enabled: bool = True
     idle_seconds: int = DEFAULT_IDLE_SECONDS
+    startup_seconds: int = DEFAULT_STARTUP_SECONDS
+    call_seconds: int = DEFAULT_CALL_SECONDS
 
     def resolved_env(self) -> dict[str, str]:
         """빈 값은 현재 환경에서 채운다.
@@ -60,6 +70,10 @@ class ServerSpec:
             payload["enabled"] = False
         if self.idle_seconds != DEFAULT_IDLE_SECONDS:
             payload["idleSeconds"] = self.idle_seconds
+        if self.startup_seconds != DEFAULT_STARTUP_SECONDS:
+            payload["startupSeconds"] = self.startup_seconds
+        if self.call_seconds != DEFAULT_CALL_SECONDS:
+            payload["callSeconds"] = self.call_seconds
         return payload
 
     @staticmethod
@@ -76,6 +90,8 @@ class ServerSpec:
             trusted=bool(payload.get("trusted", False)),
             enabled=bool(payload.get("enabled", True)),
             idle_seconds=int(payload.get("idleSeconds", DEFAULT_IDLE_SECONDS)),
+            startup_seconds=int(payload.get("startupSeconds", DEFAULT_STARTUP_SECONDS)),
+            call_seconds=int(payload.get("callSeconds", DEFAULT_CALL_SECONDS)),
         )
 
 

@@ -9,10 +9,10 @@ Mem0를 기본으로 쓰지 않는 이유는 docs/06-MEMORY.md §0에 있다. �
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 
 from junvis.core.persistence.database import Database
+from junvis.core.persistence.fts import fts_expression
 from junvis.features.memory.domain.model import (
     MemoryEntry,
     MemoryHit,
@@ -21,8 +21,6 @@ from junvis.features.memory.domain.model import (
 )
 from junvis.features.memory.domain.repository import MemoryRepository
 
-#: FTS5 문법 문자가 사용자 입력으로 들어와 질의를 깨뜨리지 않도록 토큰만 추출한다.
-_TOKEN = re.compile(r"[\w가-힣.+#-]+", re.UNICODE)
 
 #: 관련도를 이 범위로 정규화한다. 최근성·고정 보정과 섞일 수 있는 크기여야 한다.
 RELEVANCE_MIN = 0.5
@@ -125,7 +123,7 @@ class SqliteMemoryRepository(MemoryRepository):
         return [self._hydrate(row) for row in rows]
 
     def search(self, recall: Recall) -> list[MemoryHit]:
-        expression = self._fts_expression(recall.query)
+        expression = fts_expression(recall.query)
         if expression is None:
             return self._browse(recall)
         return self._match(recall, expression)
@@ -179,12 +177,6 @@ class SqliteMemoryRepository(MemoryRepository):
             params.append(recall.subject)
         return clauses, params
 
-    @staticmethod
-    def _fts_expression(query: str) -> str | None:
-        tokens = _TOKEN.findall(query or "")
-        if not tokens:
-            return None
-        return " OR ".join(f'"{token}"*' for token in tokens)
 
     @staticmethod
     def _hydrate(row) -> MemoryEntry:

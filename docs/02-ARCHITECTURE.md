@@ -6,6 +6,28 @@
 
 ---
 
+## 이 문서를 읽기 전에 — 구현하며 바뀐 것
+
+설계는 지도이지 영토가 아니다. 구현하며 사실이 달라진 곳을 여기 모아 둔다.
+각 항목의 근거는 해당 단계 문서에 있다.
+
+| 이 문서의 계획 | 실제 | 근거 |
+|---|---|---|
+| 서술적 기억은 Mem0에 위임 | 자체 SQLite+FTS5. Mem0 어댑터는 없음 | [06 §0](06-MEMORY.md) |
+| `MemoryPort`를 `core`에 | 각 feature가 자기 Port를 선언하고 조립 루트가 채움 | 계약 8·10·11번 |
+| `browser` Bounded Context | 만들지 않음. 외부 MCP 서버로 씀 | [07 §0](07-MCP-HOST.md) |
+| 임베딩 기반 도구 선별 | 토큰 겹침 랭커. 임베딩은 포트만 열어 둠 | [07 §3](07-MCP-HOST.md) |
+| `scheduler` Bounded Context | 만들지 않음. launchd가 한다 | [04 §0](04-DAILY-BRIEF.md) |
+| Plugin Architecture (`~/.junvis/plugins`) | **아직 없음.** 외부 MCP 서버가 그 자리를 대신하고 있다 | — |
+| Vision / Coding Agent | **아직 없음** | — |
+
+### 현재 구현된 Bounded Context
+
+`project_brain` · `creator` · `brief` · `voice` · `memory`
+그리고 `core`의 MCP Host.
+
+---
+
 ## 0. 확정된 기술 결정
 
 | 항목 | 결정 | 근거 |
@@ -372,7 +394,28 @@ class Project:                    # Aggregate Root
 
 ---
 
-## 10. 다음 단계
+## 10. 진행 상황
 
-3단계(구현)는 **M1 → M12 순서**로 진행한다. 각 태스크마다 결과를 요약하고 다음으로 넘어간다.
-구현 착수 전 이 설계에 대한 확정이 필요하다.
+| 단계 | 문서 | 상태 |
+|---|---|---|
+| MVP — Project Brain + MCP 코어 | 이 문서 §6 | ✅ |
+| Creator Mode | [03](03-CREATOR-MODE.md) | ✅ |
+| Daily Brief | [04](04-DAILY-BRIEF.md) | ✅ |
+| Voice | [05](05-VOICE.md) | ✅ (오디오 I/O 미검증) |
+| Personal Memory | [06](06-MEMORY.md) | ✅ |
+| MCP Host | [07](07-MCP-HOST.md) | ✅ |
+| Vision | — | 미착수 |
+| Coding Agent | — | 미착수 |
+| Plugin Architecture | 이 문서 §4 | 미착수 |
+
+### 검증되지 않은 부분
+
+이 저장소는 Linux 컨테이너에서 개발됐다. macOS 전용 코드는 **작성됐지만
+실행 확인되지 않았다.**
+
+- `MacSayTts` (`say`), `MacCalendarAdapter` (AppleScript), `notify` (알림 센터)
+- `SoxWhisperSource` (마이크 녹음 + whisper.cpp)
+- `scripts/install-launchd.sh` (문법만 확인)
+
+전부 플랫폼 검사로 비-macOS에서는 조용히 비활성화되며, 해당 파일 상단에
+그 사실을 적어 두었다.

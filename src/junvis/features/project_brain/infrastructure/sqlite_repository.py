@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from pathlib import Path
 
 from junvis.core.persistence.database import Database
+from junvis.core.persistence.fts import fts_expression
 from junvis.features.project_brain.domain.model import (
     CommitRef,
     IssueRef,
@@ -23,9 +23,6 @@ from junvis.features.project_brain.domain.value_objects import (
     Slug,
     TechStack,
 )
-
-#: FTS5 문법 문자가 사용자 입력으로 들어와 질의를 깨뜨리지 않도록 토큰만 추출한다.
-_TOKEN = re.compile(r"[\w가-힣.+#-]+", re.UNICODE)
 
 
 class SqliteProjectRepository(ProjectRepository):
@@ -180,7 +177,7 @@ class SqliteProjectRepository(ProjectRepository):
         return [self._hydrate(row) for row in rows]
 
     def search(self, query: str, limit: int = 10) -> list[Project]:
-        expression = self._fts_expression(query)
+        expression = fts_expression(query)
         if expression is None:
             return []
         rows = self._db.query(
@@ -196,17 +193,6 @@ class SqliteProjectRepository(ProjectRepository):
         )
         return [self._hydrate(row) for row in rows]
 
-    @staticmethod
-    def _fts_expression(query: str) -> str | None:
-        """사용자 입력을 안전한 FTS5 식으로 바꾼다.
-
-        토큰만 뽑아 따옴표로 감싸고 접두 검색을 붙인다. `AND`가 아니라
-        `OR`인 이유: 개인 프로젝트 검색은 재현율이 정밀도보다 중요하다.
-        """
-        tokens = _TOKEN.findall(query or "")
-        if not tokens:
-            return None
-        return " OR ".join(f'"{token}"*' for token in tokens)
 
     # -- 복원 ---------------------------------------------------------------
 

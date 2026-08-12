@@ -200,6 +200,22 @@ def test_disabled_server_cannot_be_called(catalog) -> None:
     host.close()
 
 
+def test_a_server_that_never_speaks_mcp_times_out(catalog) -> None:
+    """프로세스로는 뜨지만 MCP로 말하지 않는 서버가 있다.
+
+    (의존성 없는 인터프리터로 실행한 경우 등.) 한계가 없으면 영원히 멈춘다 —
+    실제로 겪은 문제다.
+    """
+    # 정리가 자식 종료를 기다릴 수 있으므로 짧게 자는 명령을 쓴다.
+    silent = McpHost(
+        catalog,
+        {"silent": spec("silent", command="sleep", args=("3",), startup_seconds=1)},
+    )
+    with pytest.raises(McpServerError, match="MCP 초기화에 응답하지 않았습니다"):
+        silent.discover("silent")
+    silent.close()
+
+
 def test_spawn_failure_gives_an_actionable_message(catalog) -> None:
     host = McpHost(catalog, {"broken": spec("broken", command="존재하지-않는-명령")})
     with pytest.raises(McpServerError, match="띄우지 못했습니다"):

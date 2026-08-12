@@ -9,7 +9,7 @@ from __future__ import annotations
 from junvis.core.policy.engine import PolicyEngine
 from junvis.core.ports import ClockPort, SystemClock, UnitOfWorkPort
 from junvis.core.trace.recorder import TraceRecorder
-from junvis.features.memory.application.base import TracedUseCase
+from junvis.core.usecase import TracedUseCase
 from junvis.features.memory.application.dto import MemoryView
 from junvis.features.memory.domain.model import MemoryScope, Recall, digest
 from junvis.features.memory.domain.repository import MemoryRepository

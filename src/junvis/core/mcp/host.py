@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import anyio
 from anyio.from_thread import start_blocking_portal
 
 from junvis.core.domain.errors import JunvisError
@@ -108,7 +109,12 @@ class McpHost:
         """서버를 띄워 도구 목록을 받아 캐시에 저장한다."""
         spec = self._spec(server_id)
         live = self._ensure(spec, now=now)
-        result = self._portal.call(live.session.list_tools)
+
+        async def _list() -> Any:
+            with anyio.fail_after(spec.startup_seconds):
+                return await live.session.list_tools()
+
+        result = self._portal.call(_list)
         tools = [
             ExternalTool(
                 server_id=spec.id,
@@ -169,7 +175,9 @@ class McpHost:
         live.last_used_at = now or utcnow()
         try:
             result = self._portal.call(
-                lambda: live.session.call_tool(tool, arguments or {})
+                lambda: live.session.call_tool(
+                    tool, arguments or {}, read_timeout_seconds=spec.call_seconds
+                )
             )
         except Exception as exc:
             raise McpServerError(f"'{server_id}.{tool}' 호출 실패: {exc}") from exc
@@ -203,17 +211,27 @@ class McpHost:
             cwd=spec.cwd,
         )
         errlog = self._open_errlog(spec.id)
+        stdio_cm = session_cm = None
         try:
             stdio_cm = portal.wrap_async_context_manager(stdio_client(params, errlog))
             read, write = stdio_cm.__enter__()
             session_cm = portal.wrap_async_context_manager(ClientSession(read, write))
             session = session_cm.__enter__()
-            portal.call(session.initialize)
+
+            async def _initialize() -> None:
+                # 한계가 없으면, 프로세스로는 떴지만 MCP로 말하지 않는 서버
+                # (의존성 없는 인터프리터로 실행한 경우 등)에서 영원히 멈춘다.
+                with anyio.fail_after(spec.startup_seconds):
+                    await session.initialize()
+
+            portal.call(_initialize)
         except Exception as exc:
-            errlog.close()
-            hint = f" (로그: {self._log_path(spec.id)})" if self._log_dir else ""
+            # 여기서 정리하지 않으면 실패한 서버의 자식 프로세스가 살아남는다.
+            self._close_all(spec.id, session_cm, stdio_cm, errlog)
             raise McpServerError(
-                f"'{spec.id}' 서버를 띄우지 못했습니다 ({spec.command}): {exc}{hint}"
+                f"'{spec.id}' 서버를 띄우지 못했습니다 ({spec.command}): "
+                f"{self._describe(exc, spec)}"
+                + (f" (로그: {self._log_path(spec.id)})" if self._log_dir else "")
             ) from exc
 
         live = _LiveServer(
@@ -229,19 +247,37 @@ class McpHost:
         logger.debug("MCP 서버 기동: %s", spec.id)
         return live
 
+    @staticmethod
+    def _describe(exc: BaseException, spec: ServerSpec) -> str:
+        """`TimeoutError`는 str()이 비어 있다. 사람이 읽을 문장을 만든다."""
+        if isinstance(exc, TimeoutError):
+            return (
+                f"{spec.startup_seconds}초 안에 MCP 초기화에 응답하지 않았습니다"
+                " (명령이 MCP 서버가 맞는지 확인하세요)"
+            )
+        return str(exc) or type(exc).__name__
+
     def stop(self, server_id: str) -> bool:
         live = self._live.pop(server_id, None)
         if live is None:
             return False
-        for manager in (live.session_cm, live.stdio_cm):
-            try:
-                manager.__exit__(None, None, None)
-            except Exception as exc:  # pragma: no cover - 종료 실패는 치명적이지 않다
-                logger.debug("서버 종료 중 오류(%s): %s", server_id, exc)
-        if live.errlog is not None:
-            live.errlog.close()
+        self._close_all(server_id, live.session_cm, live.stdio_cm, live.errlog)
         logger.debug("MCP 서버 종료: %s", server_id)
         return True
+
+    @staticmethod
+    def _close_all(server_id: str, *resources) -> None:
+        """열린 순서의 역순으로 닫는다. 하나가 실패해도 나머지는 닫는다."""
+        for resource in resources:
+            if resource is None:
+                continue
+            try:
+                if hasattr(resource, "__exit__"):
+                    resource.__exit__(None, None, None)
+                else:
+                    resource.close()
+            except Exception as exc:  # pragma: no cover - 종료 실패는 치명적이지 않다
+                logger.debug("서버 정리 중 오류(%s): %s", server_id, exc)
 
     def shutdown_idle(self, *, now: datetime | None = None) -> list[str]:
         """유휴 서버를 내린다.

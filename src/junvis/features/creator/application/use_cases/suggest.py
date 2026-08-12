@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from junvis.core.eventbus.bus import EventBus
 from junvis.core.trace.recorder import TraceRecorder
-from junvis.features.creator.application.base import TracedUseCase
+from junvis.core.usecase import TracedUseCase
 from junvis.features.creator.application.dto import ContentSummary
 from junvis.features.creator.application.ports import (
     ClockPort,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from junvis.core.eventbus.bus import EventBus
 from junvis.core.policy.engine import PolicyEngine
 from junvis.core.trace.recorder import TraceRecorder
-from junvis.features.project_brain.application.base import TracedUseCase
+from junvis.core.usecase import TracedUseCase
 from junvis.features.project_brain.application.dto import ProjectSummary
 from junvis.features.project_brain.application.ports import (
     ClockPort,

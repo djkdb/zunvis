@@ -159,6 +159,8 @@ junvis mcp list
 - **컨텍스트 오염 방지** — 질의와 관련된 상위 12개 도구만 고른다.
 - **정책 게이트** — 외부 서버 호출은 확인이 필요하다. 설정에서 `trusted`로 표시한 서버만 자동 통과한다.
 
+그리고 이 Host는 **다시 MCP로 노출된다.** Claude Code가 `junvis_external_tools`로 도구를 찾고 `junvis_external_call`로 부르면, 그 호출이 JUNVIS의 정책 게이트와 도구 선별을 거쳐 나간다.
+
 ### Claude Code에 붙이기
 
 `~/.claude.json` 또는 프로젝트 `.mcp.json`:
@@ -175,14 +177,14 @@ junvis mcp list
 
 노출되는 도구:
 
-| Project Brain | Creator | Brief · Memory |
-|---|---|---|
-| `junvis_project_list` | `junvis_content_create` | `junvis_daily_brief` |
-| `junvis_project_context` | `junvis_content_list` | `junvis_remember` |
-| `junvis_project_search` | `junvis_content_get` | `junvis_recall` |
-| `junvis_project_register` | `junvis_content_dismiss` | `junvis_memories` |
-| `junvis_project_remember` | `junvis_content_published` | `junvis_forget` |
-| `junvis_project_refresh` | `junvis_brand_voice` | `junvis_pin_memory` |
+| Project Brain | Creator | Brief · Memory | Host |
+|---|---|---|---|
+| `junvis_project_list` | `junvis_content_create` | `junvis_daily_brief` | `junvis_external_tools` |
+| `junvis_project_context` | `junvis_content_list` | `junvis_remember` | `junvis_external_call` |
+| `junvis_project_search` | `junvis_content_get` | `junvis_recall` | |
+| `junvis_project_register` | `junvis_content_dismiss` | `junvis_memories` | |
+| `junvis_project_remember` | `junvis_content_published` | `junvis_forget` | |
+| `junvis_project_refresh` | `junvis_brand_voice` | `junvis_pin_memory` | |
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
@@ -208,7 +210,7 @@ Python 3.11+ 필요. macOS 우선 설계이며 Windows 기능은 구현하지 �
 
 ```
 src/junvis/
-├── core/        # 공유 커널 — eventbus · policy · trace · model · mcp · persistence
+├── core/        # 공유 커널 — eventbus · policy · trace · model · mcp(Host) · persistence
 ├── features/    # Bounded Context 하나 = 폴더 하나
 │   ├── project_brain/
 │   │   ├── domain/          # 순수. 외부 기술을 모른다
@@ -238,6 +240,12 @@ src/junvis/
 lint-imports    # 계층을 어기면 실패한다
 pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증된다
 ```
+
+## 아직 검증되지 않은 것
+
+이 저장소는 Linux에서 개발됐다. macOS 전용 코드는 작성됐지만 **실행 확인되지 않았다** — `say`, Calendar.app(AppleScript), 알림 센터, 마이크 녹음(sox+whisper.cpp), launchd 스크립트. 전부 플랫폼 검사로 비-macOS에서는 조용히 비활성화되고, 각 파일 상단에 그 사실을 적어 뒀다.
+
+미착수: Vision, Coding Agent, 플러그인 아키텍처. 자세한 현황은 [`docs/02-ARCHITECTURE.md` §10](docs/02-ARCHITECTURE.md).
 
 ## 설계 문서
 

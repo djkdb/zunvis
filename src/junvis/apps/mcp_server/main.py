@@ -20,6 +20,7 @@ from mcp.server.stdio import stdio_server
 
 from junvis.apps.container import Junvis, build
 from junvis.core.domain.errors import JunvisError
+from junvis.core.mcp.host_tools import ArgumentConfirmer, build_host_tools
 from junvis.features.brief.interface.mcp_tools import build_brief_tools
 from junvis.features.creator.interface.mcp_tools import build_creator_tools
 from junvis.features.memory.interface.mcp_tools import build_memory_tools
@@ -40,11 +41,16 @@ INSTRUCTIONS = (
     "손대지 않은 제안이다.\n"
     "- 사용자가 선호·규칙·습관을 말하면 junvis_remember로 남겨라. 다음에도 "
     "유효한 사실만 남기고, 지나가는 말은 남기지 않는다. 작업 전에 "
-    "junvis_recall로 관련 기억을 확인하면 같은 말을 두 번 듣지 않는다."
+    "junvis_recall로 관련 기억을 확인하면 같은 말을 두 번 듣지 않는다.\n"
+    "- JUNVIS가 직접 못 하는 일(브라우저 조작 등)은 junvis_external_tools로 "
+    "등록된 외부 MCP 서버의 도구를 찾고 junvis_external_call로 부른다. "
+    "외부 호출은 사용자 확인이 필요하니 먼저 물어보고 confirm=true로 부른다."
 )
 
 
-def collect_tools(container: Junvis) -> list[ToolSpec]:
+def collect_tools(
+    container: Junvis, confirmer: ArgumentConfirmer | None = None
+) -> list[ToolSpec]:
     """feature마다 자기 도구를 내놓고, 조립 루트가 모은다."""
     return [
         *build_project_tools(
@@ -72,6 +78,8 @@ def collect_tools(container: Junvis) -> list[ToolSpec]:
             forget=container.memory.forget,
             pin=container.memory.pin,
         ),
+        # JUNVIS가 Host로서 가진 것을 다시 도구로 내놓는다.
+        *build_host_tools(container.mcp, confirmer),
     ]
 
 
@@ -84,8 +92,10 @@ def _to_mcp_tool(spec: ToolSpec) -> types.Tool:
     )
 
 
-def create_server(container: Junvis) -> Server:
-    specs = {spec.name: spec for spec in collect_tools(container)}
+def create_server(
+    container: Junvis, confirmer: ArgumentConfirmer | None = None
+) -> Server:
+    specs = {spec.name: spec for spec in collect_tools(container, confirmer)}
     # SQLite 커넥션 하나를 공유하므로 도구 실행을 직렬화한다.
     # 개인용 단일 사용자 서버에서 이 정도 단순함이 옳다.
     lock = anyio.Lock()
@@ -137,8 +147,8 @@ def create_server(container: Junvis) -> Server:
     )
 
 
-async def serve(container: Junvis) -> None:
-    server = create_server(container)
+async def serve(container: Junvis, confirmer: ArgumentConfirmer | None = None) -> None:
+    server = create_server(container, confirmer)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
 
@@ -149,9 +159,13 @@ def main() -> int:
         level=os.environ.get("JUNVIS_LOG_LEVEL", "WARNING").upper(),
         stream=sys.stderr,
     )
-    container = build(offline=os.environ.get("JUNVIS_OFFLINE") == "1")
+    # 확인 통로가 없는 경로다. 도구 인자의 confirm 값을 사용자 확인으로 삼는다.
+    confirmer = ArgumentConfirmer()
+    container = build(
+        offline=os.environ.get("JUNVIS_OFFLINE") == "1", confirmer=confirmer
+    )
     try:
-        anyio.run(serve, container)
+        anyio.run(serve, container, confirmer)
     except KeyboardInterrupt:  # pragma: no cover
         pass
     finally:

@@ -6,7 +6,7 @@ from junvis.core.eventbus.bus import EventBus
 from junvis.core.policy.engine import PolicyEngine
 from junvis.core.ports import ClockPort, SystemClock, UnitOfWorkPort
 from junvis.core.trace.recorder import TraceRecorder
-from junvis.features.memory.application.base import TracedUseCase
+from junvis.core.usecase import TracedUseCase
 from junvis.features.memory.application.dto import MemoryView
 from junvis.features.memory.domain.errors import MemoryNotFound
 from junvis.features.memory.domain.events import MemoryForgotten, MemoryRemembered
