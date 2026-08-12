@@ -24,11 +24,35 @@ def register(sub) -> dict:
     say = sub.add_parser("say", help="한 문장을 소리내어 읽는다")
     say.add_argument("text")
 
+    ask = sub.add_parser("ask", help="무엇이든 물어본다 (마이크 없이)")
+    ask.add_argument("question", nargs="*", help="비워 두면 대화를 이어간다")
+
     orb = sub.add_parser("orb", help="부르면 반응하는 화면을 띄운다")
     orb.add_argument("--port", type=int, default=DEFAULT_PORT)
     orb.add_argument("--no-open", action="store_true", help="브라우저를 열지 않는다")
 
-    return {"listen": cmd_listen, "say": cmd_say, "orb": cmd_orb}
+    return {"listen": cmd_listen, "say": cmd_say, "orb": cmd_orb, "ask": cmd_ask}
+
+
+def cmd_ask(args, junvis: Junvis) -> int:
+    """한 번 묻고 끝내거나, 질문 없이 부르면 계속 대화한다."""
+    if args.question:
+        print(junvis.voice.handle_text(" ".join(args.question)))
+        junvis.drain()
+        return 0
+
+    print("무엇이든 물어보세요. Ctrl-D로 끝냅니다.", file=sys.stderr)
+    print(f"할 수 있는 일: {'  ·  '.join(junvis.voice.examples)}\n", file=sys.stderr)
+    try:
+        while True:
+            question = input("> ").strip()
+            if not question:
+                continue
+            print(junvis.voice.handle_text(question) + "\n")
+            junvis.drain()
+    except (EOFError, KeyboardInterrupt):
+        print("\n끝냅니다.", file=sys.stderr)
+    return 0
 
 
 def cmd_orb(args, junvis: Junvis) -> int:

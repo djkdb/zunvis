@@ -33,6 +33,7 @@ class ScriptedModel:
     def __init__(self) -> None:
         self.calls: list = []
         self.judge_verdict = True
+        self.chat_answer = "그건 이렇게 생각합니다."
 
     def complete(self, request):
         from junvis.core.model.ports import ModelResponse
@@ -41,6 +42,9 @@ class ScriptedModel:
         properties = (request.schema or {}).get("properties", {})
         if "is_command" in properties:
             body = json.dumps({"is_command": self.judge_verdict})
+        elif request.schema is None:
+            # 스키마가 없으면 대화다. 사람에게 하는 말을 돌려준다.
+            body = self.chat_answer
         else:
             body = json.dumps(VALID_PAYLOAD, ensure_ascii=False)
         return ModelResponse(text=body, model="scripted")
@@ -468,10 +472,33 @@ def test_voice_content_command_with_an_explicit_subject(talking) -> None:
     assert drafted[0].subject == "MCP 서버 만들기"
 
 
-def test_voice_unknown_command(talking) -> None:
-    from junvis.apps.voice_router import UNKNOWN_RESPONSE
+def test_unmatched_speech_becomes_a_conversation(talking) -> None:
+    """규칙에 없는 말이라고 "못 합니다"로 끝내지 않는다."""
+    outcome = say(talking, "자비스 요즘 뭐부터 하면 좋을까")
 
-    assert say(talking, "자비스 우주선 발사해").response == UNKNOWN_RESPONSE
+    assert outcome.acted
+    assert outcome.response == "그건 이렇게 생각합니다."
+
+
+def test_conversation_is_grounded_in_what_junvis_knows(talking, project) -> None:
+    """근거 없이 답하면 그럴듯한 거짓말을 한다. 개인 비서에서 최악이다."""
+    talking.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    talking.drain()
+
+    say(talking, "자비스 요즘 뭐부터 하면 좋을까")
+
+    chat = [c for c in talking.model.calls if c.schema is None][-1]
+    assert "릴스 편집기" in chat.prompt
+    assert "ZUN" in chat.system
+
+
+def test_rules_still_win_over_conversation(talking) -> None:
+    """아는 명령은 여전히 규칙이 결정론적으로 실행한다."""
+    outcome = say(talking, "자비스 오늘 브리핑")
+
+    assert "브리핑입니다" in outcome.response or "챙길 것은 없습니다" in outcome.response
 
 
 def test_voice_ignores_speech_without_a_wake_word(talking) -> None:

@@ -44,7 +44,8 @@ JUNVIS  /Users/zun/dev/zunvis
 ### 1. Project Brain — 프로젝트를 기억한다
 
 ```bash
-junvis add ~/dev/zunvis --purpose "개인 AI OS"   # 등록 + git·README 자동 수집
+junvis scan ~/dev                                # git 저장소를 한 번에 전부 등록
+junvis add ~/dev/zunvis --purpose "개인 AI OS"   # 하나만 등록 + git·README 자동 수집
 junvis list                                      # 기억하고 있는 프로젝트
 junvis context zunvis                            # Context Pack 출력
 junvis search "AI 웹앱"                          # 전문 검색(FTS5)
@@ -137,7 +138,14 @@ $ junvis listen
 
 ①~③은 모델 없이 결정적으로 판정된다. ④만 `ModelRole.FAST`를 쓴다 — 이 판정에 큰 모델을 부르면 말 한마디마다 몇 초씩 기다리게 된다.
 
-**무엇을 실행할지는 LLM에게 묻지 않는다.** 음성은 오인식이 잦은 입력이라, 여기에 LLM 라우팅까지 얹으면 설명할 수 없는 층이 두 개가 된다. "명령인가 아닌가"만 모델에게 묻고 라우팅은 읽을 수 있는 규칙으로 둔다.
+**무엇을 실행할지는 LLM이 정하지 않는다.** 아는 명령은 읽을 수 있는 규칙이 결정론적으로 실행한다. 규칙이 아무것도 못 잡았을 때만 대화로 넘어가고, 그때 모델이 하는 일은 **말로 답하는 것뿐**이다 — 브리핑을 실행할지 릴스를 만들지는 여전히 정하지 않는다. 이 구분이 무너지면 "왜 갑자기 이걸 실행했지?"를 설명할 수 없다.
+
+```bash
+junvis ask "요즘 뭐부터 하면 좋을까"    # 마이크 없이 대화
+junvis ask                              # 계속 대화
+```
+
+대화는 **아는 것 위에서만** 한다. 프로젝트·기억·브랜드 성향을 싣고 답한다. 근거 없이 답하면 그럴듯한 거짓말을 하고, 그게 개인 비서에서 가장 나쁜 실패다.
 
 ```bash
 junvis listen                 # 마이크 (sox + whisper-cli 필요)

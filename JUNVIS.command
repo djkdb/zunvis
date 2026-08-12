@@ -154,7 +154,7 @@ menu() {
     note "   부르면 반응하는 화면(오브)이 함께 뜹니다"
     say "  2) 오늘 브리핑"
     say "  3) 상태 점검"
-    say "  4) 직접 입력 (마이크 없이 텍스트로)"
+    say "  4) 대화 — 무엇이든 물어보기 (마이크 없이)"
     say "  5) 그냥 종료"
     if [[ -z "${flags}" ]]; then
         say "  6) 마이크 켜기 — 맥 내장 음성 인식   ${DIM}(기본)${OFF}"
@@ -170,7 +170,7 @@ menu() {
         1) listen_with_orb "${flags}" ;;
         2) "${JUNVIS}" brief ;;
         3) "${JUNVIS}" setup ;;
-        4) "${JUNVIS}" listen --stdin ;;
+        4) "${JUNVIS}" ask ;;
         5) return 0 ;;
         6) enable_microphone ;;
         *) warn "모르는 선택입니다: ${choice}" ;;

@@ -4,10 +4,13 @@
 `creator`를 모두 알아야 하는데, feature끼리는 서로를 임포트하지 않기
 때문이다(계약 10번). 여러 Context를 아는 것은 조립 루트의 일이다.
 
-**LLM 라우팅을 쓰지 않는다.** 음성은 오인식이 잦은 입력이다. 여기에 LLM
-라우팅까지 얹으면 왜 그렇게 동작했는지 설명할 수 없는 층이 두 개가 된다.
-"명령인가 아닌가"만 모델에게 묻고, 무엇을 할지는 읽을 수 있는 규칙으로 둔다.
-(docs/05-VOICE.md §3)
+**무엇을 실행할지는 여전히 LLM이 정하지 않는다.** 음성은 오인식이 잦아서,
+실행되는 동작이 모델 판단에 좌우되면 왜 그렇게 됐는지 설명할 수 없다.
+아는 명령은 읽을 수 있는 규칙이 결정론적으로 고른다(docs/05-VOICE.md §3).
+
+규칙이 **아무것도 못 잡았을 때만** 대화로 넘긴다. 그때 모델이 하는 일은
+말로 답하는 것뿐이고, 브리핑을 실행할지 릴스를 만들지는 정하지 않는다.
+이 구분이 무너지면 "왜 갑자기 이걸 실행했지?"를 설명할 수 없게 된다.
 """
 
 from __future__ import annotations
@@ -63,11 +66,13 @@ class VoiceCommandRouter:
         list_projects: ListProjects,
         list_content: ListContent,
         generate_content: GenerateContent,
+        converse: Callable[[str], str] | None = None,
     ) -> None:
         self._compose_brief = compose_brief
         self._list_projects = list_projects
         self._list_content = list_content
         self._generate_content = generate_content
+        self._converse = converse
         # 순서가 곧 우선순위다. 먼저 걸리는 규칙이 이긴다.
         self._routes = (
             Route("brief", ("브리핑", "브리프", "오늘", "brief"), self._brief, "오늘 브리핑"),
@@ -88,6 +93,9 @@ class VoiceCommandRouter:
                 except JunvisError as exc:
                     logger.debug("음성 명령 실패(%s): %s", route.name, exc)
                     return f"{route.name} 처리 중 문제가 생겼습니다."
+
+        if self._converse is not None:
+            return self._converse(command)
         return UNKNOWN_RESPONSE
 
     # -- 각 경로 -------------------------------------------------------------

@@ -22,6 +22,7 @@ from junvis.apps.adapters import (
     ProjectDigestAdapter,
 )
 from junvis.apps.memory_learning import register_learning
+from junvis.apps.conversation import Conversation
 from junvis.apps.voice_router import VoiceCommandRouter
 from junvis.core.eventbus.bus import DrainReport, EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
@@ -174,6 +175,11 @@ class Voice:
     presence_path: Path
     #: 지금 말할 수 있는 것들. 음성에는 메뉴가 없으니 어딘가에는 적어야 한다.
     examples: tuple[str, ...]
+    #: 규칙이 못 알아들은 말을 받는다. `junvis ask` 도 이것을 쓴다.
+    conversation: Conversation
+    #: 마이크를 거치지 않고 같은 라우터로 보낸다. 호출어도 게이트도 없다 —
+    #: 타이핑한 것은 언제나 나에게 한 말이다.
+    handle_text: object
 
 
 @dataclass
@@ -263,7 +269,8 @@ def build(
         offline=offline,
     )
     voice = _build_voice(
-        bus, tracer, resolved_model, projects, creator, brief, tts=tts, root=root
+        bus, tracer, resolved_model, projects, creator, brief, memory,
+        tts=tts, root=root,
     )
     mcp_config = McpConfig(root / CONFIG_FILENAME)
     mcp_host = McpHost(
@@ -395,16 +402,24 @@ def _build_voice(
     projects: ProjectBrain,
     creator: Creator,
     brief: Brief,
+    memory: Memory,
     *,
     tts: TextToSpeechPort | None,
     root: Path,
 ) -> Voice:
     """라우터가 여러 Context를 안다. feature끼리는 여전히 서로를 모른다."""
+    conversation = Conversation(
+        model,
+        list_projects=projects.list_all,
+        digest=memory.digest,
+        get_brand_voice=creator.get_brand_voice,
+    )
     router = VoiceCommandRouter(
         compose_brief=brief.compose,
         list_projects=projects.list_all,
         list_content=creator.list_all,
         generate_content=creator.generate,
+        converse=conversation,
     )
     config = WakeWordConfig.with_words(_wake_words())
     resolved_tts = tts or default_tts()
@@ -423,6 +438,8 @@ def _build_voice(
         config=config,
         presence_path=presence.path,
         examples=router.examples(),
+        conversation=conversation,
+        handle_text=router.handle,
     )
 
 
