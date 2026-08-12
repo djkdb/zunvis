@@ -162,6 +162,9 @@ def default_rules() -> tuple[Rule, ...]:
                 "content.dismiss",
                 "content.record_published",
                 "content.update_brand_voice",
+                # 사용자가 설정에서 신뢰한다고 표시한 MCP 서버.
+                # 그 판단은 사용자가 내렸고, 우리는 그것을 존중한다.
+                "mcp.trusted.*",
             ),
         ),
         # -- SAFE ----------------------------------------------------------

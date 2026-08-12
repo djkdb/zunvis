@@ -26,7 +26,7 @@ def test_migrate_is_idempotent() -> None:
     first = database.migrate(CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS)
     second = database.migrate(CORE_MIGRATIONS, PROJECT_BRAIN_MIGRATIONS)
 
-    assert len(first) == 2
+    assert first == ["core/001_core.sql", "core/002_mcp.sql", "project_brain/001_project_brain.sql"]
     assert second == []  # 두 번째는 아무것도 적용하지 않는다
     database.close()
 
@@ -39,6 +39,7 @@ def test_migration_names_are_namespaced_by_owner(db: Database) -> None:
     applied = {row["name"] for row in db.query("SELECT name FROM schema_migrations")}
     assert applied == {
         "core/001_core.sql",
+        "core/002_mcp.sql",
         "project_brain/001_project_brain.sql",
         "creator/001_creator.sql",
         "memory/001_memory.sql",

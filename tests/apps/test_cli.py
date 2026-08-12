@@ -211,6 +211,66 @@ def test_say_off_macos_reports_failure(home: Path, capsys) -> None:
     assert "소리를 내지 못했습니다" in capsys.readouterr().err
 
 
+# -- 외부 MCP 서버 ------------------------------------------------------------
+
+
+def _fixture_server_args() -> list[str]:
+    import sys
+
+    script = Path(__file__).resolve().parent / "fixture_mcp_server.py"
+    return [sys.executable, str(script)]
+
+
+def test_mcp_add_list_tools_and_call(home: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[2] / "src"))
+    executable, script = _fixture_server_args()
+
+    assert cli(home, "mcp", "add", "fixture", executable, script, "--trusted") == 0
+    added = capsys.readouterr().out
+    assert "등록했습니다: fixture" in added
+    assert "도구 3개" in added
+
+    assert cli(home, "mcp", "list") == 0
+    assert "fixture" in capsys.readouterr().out
+
+    assert cli(home, "mcp", "tools", "계산기") == 0
+    assert "fixture.add_numbers" in capsys.readouterr().out
+
+    assert cli(home, "mcp", "call", "fixture", "echo", "--args", '{"text":"안녕"}') == 0
+    assert "안녕" in capsys.readouterr().out
+
+
+def test_mcp_add_does_not_shadow_the_top_level_command(home: Path, capsys) -> None:
+    """`mcp add`의 위치 인자 이름이 최상위 서브파서의 dest를 덮으면
+    핸들러를 찾지 못해 조용히 exit 2가 난다. 실제로 겪은 버그다."""
+    from junvis.apps.cli.main import build_parser
+
+    namespace = build_parser().parse_args(["mcp", "add", "x", "/bin/echo"])
+    assert namespace.command == "mcp"
+    assert namespace.mcp_command == "add"
+    assert namespace.executable == "/bin/echo"
+
+
+def test_mcp_call_on_unknown_server_reports_error(home: Path, capsys) -> None:
+    assert cli(home, "mcp", "call", "없는서버", "echo") == 1
+    assert "등록되지 않은 서버" in capsys.readouterr().err
+
+
+def test_mcp_remove(home: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[2] / "src"))
+    executable, script = _fixture_server_args()
+    cli(home, "mcp", "add", "fixture", executable, script)
+    capsys.readouterr()
+
+    assert cli(home, "mcp", "remove", "fixture") == 0
+    assert cli(home, "mcp", "list") == 0
+    assert "등록된 서버가 없습니다" in capsys.readouterr().out
+
+
+def test_mcp_remove_unknown(home: Path, capsys) -> None:
+    assert cli(home, "mcp", "remove", "없음") == 1
+
+
 def test_listen_without_audio_tools_explains_what_is_missing(
     home: Path, capsys
 ) -> None:

@@ -25,6 +25,9 @@ from junvis.apps.memory_learning import register_learning
 from junvis.apps.voice_router import VoiceCommandRouter
 from junvis.core.eventbus.bus import DrainReport, EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
+from junvis.core.mcp.catalog import ToolCatalog
+from junvis.core.mcp.config import CONFIG_FILENAME, McpConfig
+from junvis.core.mcp.host import McpHost
 from junvis.core.model.ollama import OllamaAdapter
 from junvis.core.model.ports import ModelPort
 from junvis.core.persistence import CORE_MIGRATIONS, Database
@@ -184,12 +187,15 @@ class Junvis:
     brief: Brief
     voice: Voice
     memory: Memory
+    mcp: McpHost
 
     def drain(self, limit: int = 100) -> DrainReport:
         """미처리 비동기 이벤트를 소비한다. 진입점이 작업 후 호출한다."""
         return self.bus.drain(limit)
 
     def close(self) -> None:
+        # 외부 MCP 서버 프로세스를 먼저 내린다. 고아 프로세스를 남기지 않는다.
+        self.mcp.close()
         self.db.close()
 
     def __enter__(self) -> Junvis:
@@ -252,6 +258,10 @@ def build(
         offline=offline,
     )
     voice = _build_voice(bus, tracer, resolved_model, projects, creator, brief, tts=tts)
+    mcp_config = McpConfig(root / CONFIG_FILENAME)
+    mcp_host = McpHost(
+        ToolCatalog(db), mcp_config.load(), policy=policy, log_dir=root / "logs"
+    )
 
     register_project_subscribers(bus, projects.refresh)
     register_creator_subscribers(bus, creator.suggest)
@@ -270,6 +280,7 @@ def build(
         brief=brief,
         voice=voice,
         memory=memory,
+        mcp=mcp_host,
     )
 
 

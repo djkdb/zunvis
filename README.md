@@ -134,6 +134,31 @@ $ junvis reel "MCP 서버 만들기"
 
 **무엇을 기억하지 않을지가 더 중요하다.** 발행한 콘텐츠와 시작한 프로젝트는 자동으로 기억하지만, 음성 명령은 남기지 않는다 — 말한 것을 전부 저장하면 잡음이 신호를 덮는다.
 
+### 6. MCP Host — 남의 도구를 쓴다
+
+JUNVIS는 이제 양방향이다. 도구를 **제공**할 뿐 아니라 외부 MCP 서버를 **소비**한다.
+
+```
+Claude Code ──MCP──▶ JUNVIS ──MCP──▶ browser-use
+                       │              notion, slack, …
+                       └─ 자체 기능
+```
+
+```bash
+junvis mcp add browser uvx --from browser-use python -m browser_use.mcp.server
+junvis mcp tools 브라우저      # 질의와 관련된 도구만
+junvis mcp call browser navigate --args '{"url":"https://…"}'
+junvis mcp list
+```
+
+설정은 `~/.junvis/mcp.json`이며 **Claude Code와 같은 `mcpServers` 형식**이다. 기존 설정을 그대로 옮길 수 있다.
+
+세 가지가 설계대로 지켜진다:
+
+- **지연 기동** — 도구 목록은 카탈로그 캐시에서 답한다. 서버는 실제로 호출할 때만 뜨고, 유휴 5분 뒤 내려간다.
+- **컨텍스트 오염 방지** — 질의와 관련된 상위 12개 도구만 고른다.
+- **정책 게이트** — 외부 서버 호출은 확인이 필요하다. 설정에서 `trusted`로 표시한 서버만 자동 통과한다.
+
 ### Claude Code에 붙이기
 
 `~/.claude.json` 또는 프로젝트 `.mcp.json`:
@@ -225,10 +250,11 @@ pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증�
 | [`docs/04-DAILY-BRIEF.md`](docs/04-DAILY-BRIEF.md) | Daily Brief 설계 + 우선순위 규칙 |
 | [`docs/05-VOICE.md`](docs/05-VOICE.md) | Voice 설계 + 4단 게이트 |
 | [`docs/06-MEMORY.md`](docs/06-MEMORY.md) | Personal Memory 설계 + digest 압축 |
+| [`docs/07-MCP-HOST.md`](docs/07-MCP-HOST.md) | MCP Host 설계 + Browser Use를 라이브러리로 쓰지 않는 이유 |
 
 ## 핵심 결정
 
-- **도구 표준은 MCP 하나.** 자체 도구 포맷을 만들지 않는다. JUNVIS는 MCP Host이자 Server다.
+- **도구 표준은 MCP 하나.** 자체 도구 포맷을 만들지 않는다. JUNVIS는 MCP Host이자 Server다. 서드파티 도구는 라이브러리로 감싸지 않고 **별도 프로세스의 MCP 서버로 쓴다** — 의존성 충돌이 구조적으로 사라지고, 어댑터를 하나도 쓰지 않는다.
 - **기억은 2층.** 구조적 기억(프로젝트·커밋·캘린더)과 서술적 기억(선호·규칙) 모두 자체 SQLite가 소유한다. 의미 검색이 필요해지면 `MemoryRepository` 뒤에 Mem0를 끼운다 — [이유](docs/06-MEMORY.md#0-원래-계획에서-바꾼-것).
 - **모든 부작용은 PolicyEngine을 통과한다.** SAFE/LOW는 자동, MEDIUM/HIGH는 확인, FORBIDDEN은 거부.
 - **모든 실행은 Trace를 남긴다.** Trace가 개인화의 원재료다.
