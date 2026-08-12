@@ -176,6 +176,7 @@ def default_rules() -> tuple[Rule, ...]:
                 "trace.read",
                 "content.list",
                 "content.read",
+                "brief.compose",
             ),
         ),
     )

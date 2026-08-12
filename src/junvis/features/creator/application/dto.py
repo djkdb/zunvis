@@ -21,6 +21,7 @@ class ContentSummary:
     hashtags: tuple[str, ...]
     published_url: str | None
     updated_at: datetime
+    published_at: datetime | None = None
 
     @classmethod
     def of(cls, idea: ContentIdea) -> ContentSummary:
@@ -37,6 +38,7 @@ class ContentSummary:
             hashtags=tuple(str(tag) for tag in script.hashtags) if script else (),
             published_url=idea.published_url,
             updated_at=idea.updated_at,
+            published_at=idea.published_at,
         )
 
 

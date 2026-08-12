@@ -118,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     brand.add_argument("--tone")
     brand.add_argument("--audience")
 
+    # -- Daily Brief --------------------------------------------------------
+    brief = sub.add_parser("brief", help="오늘의 브리핑")
+    brief.add_argument(
+        "--notify", action="store_true", help="macOS 알림으로 요약 한 줄 (launchd용)"
+    )
+
     # -- 운영 ---------------------------------------------------------------
     sub.add_parser("drain", help="밀린 비동기 이벤트를 처리한다")
     sub.add_parser("doctor", help="상태를 점검한다")
@@ -286,6 +292,20 @@ def _cmd_brand(args, junvis: Junvis) -> int:
     return 0
 
 
+# -- Daily Brief -------------------------------------------------------------
+
+
+def _cmd_brief(args, junvis: Junvis) -> int:
+    briefing = junvis.brief.compose()
+    print(briefing.to_markdown())
+    if args.notify:
+        # 알림 전송 실패(macOS가 아니거나 권한 없음)로 브리핑이 실패하지는 않는다.
+        from junvis.features.brief.infrastructure.notifier import notify
+
+        notify(briefing.headline(), subtitle=f"{briefing.day.isoformat()} 브리핑")
+    return 0
+
+
 # -- 운영 --------------------------------------------------------------------
 
 
@@ -331,6 +351,7 @@ _HANDLERS = {
     "dismiss": _cmd_dismiss,
     "published": _cmd_published,
     "brand": _cmd_brand,
+    "brief": _cmd_brief,
     "drain": _cmd_drain,
     "doctor": _cmd_doctor,
 }

@@ -31,6 +31,7 @@ EXPECTED_TOOLS = {
     "junvis_content_dismiss",
     "junvis_content_published",
     "junvis_brand_voice",
+    "junvis_daily_brief",
 }
 
 

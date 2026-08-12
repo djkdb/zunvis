@@ -198,6 +198,84 @@ def test_brand_voice_tool_reads_and_writes(junvis) -> None:
     assert tools["junvis_brand_voice"].handler({}).data["topics"] == ["Swift", "macOS"]
 
 
+# -- Daily Brief -------------------------------------------------------------
+
+
+def test_brief_pulls_from_both_features(junvis, project) -> None:
+    """brief는 두 feature를 임포트하지 않는데도 둘 다 읽는다(계약 8번)."""
+    junvis.projects.register(
+        RegisterProjectCommand(
+            slug="reels-editor",
+            name="릴스 편집기",
+            path=project,
+            purpose="ZUN 브랜드 콘텐츠 제작 도구",
+        )
+    )
+    junvis.drain()
+
+    briefing = junvis.brief.compose()
+    markdown = briefing.to_markdown()
+    titles = [section.title for section in briefing.sections]
+
+    assert "진행 중인 프로젝트" in titles  # project_brain에서
+    assert "대기 중인 아이디어" in titles  # creator에서
+    assert "작업 습관" in titles  # Trace에서
+    assert "릴스 편집기" in markdown
+    assert "릴스 편집기 만든 과정" in markdown
+
+
+def test_brief_is_empty_on_a_fresh_install(tmp_path, model) -> None:
+    with build(tmp_path / "fresh", offline=True, model=model) as fresh:
+        assert fresh.brief.compose().is_empty
+
+
+def test_brief_surfaces_uncommitted_work(junvis, project) -> None:
+    junvis.projects.register(
+        RegisterProjectCommand(slug="reels-editor", name="릴스 편집기", path=project)
+    )
+    junvis.drain()
+    (project / "새파일.txt").write_text("작업 중", encoding="utf-8")
+    junvis.projects.refresh("reels-editor")
+
+    briefing = junvis.brief.compose()
+    assert briefing.sections[0].title == "멈춰 있는 작업"
+    assert briefing.headline().startswith("멈춰 있는 작업:")
+
+
+def test_briefing_does_not_count_itself_as_activity(junvis) -> None:
+    """launchd가 매일 아침 브리핑을 돌린다.
+
+    브리핑이 자기 조회를 Trace에 남기면 "가장 활발한 시간대"가 결국
+    브리핑 시각으로 수렴한다. 자기 집계로 통계를 오염시키면 안 된다.
+    """
+    for _ in range(3):
+        junvis.brief.compose()
+
+    titles = [s.title for s in junvis.brief.compose().sections]
+    assert "작업 습관" not in titles
+
+
+def test_user_actions_do_count_as_activity(junvis) -> None:
+    junvis.creator.generate(subject="주제")  # 사용자가 직접 부른 것
+    briefing = junvis.brief.compose()
+
+    section = next(s for s in briefing.sections if s.title == "작업 습관")
+    assert "content.create" in section.render()
+
+
+def test_brief_tool_is_exposed(junvis) -> None:
+    tools = {spec.name: spec for spec in collect_tools(junvis)}
+    result = tools["junvis_daily_brief"].handler({})
+    assert "브리핑" in result.text
+    assert "peak_urgency" in result.data
+
+
+def test_offline_mode_skips_news(junvis) -> None:
+    """offline=True면 뉴스 어댑터를 아예 끼우지 않는다."""
+    titles = [s.title for s in junvis.brief.compose().sections]
+    assert "AI 소식" not in titles
+
+
 def test_every_use_case_leaves_a_trace(junvis) -> None:
     from junvis.core.trace.store import SqliteTraceStore
 

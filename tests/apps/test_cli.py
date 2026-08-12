@@ -153,3 +153,30 @@ def test_reel_without_ollama_fails_with_actionable_message(
 def test_reel_requires_subject_or_id(home: Path, capsys) -> None:
     assert cli(home, "reel") == 2
     assert "주제나 --id" in capsys.readouterr().err
+
+
+# -- Daily Brief -------------------------------------------------------------
+
+
+def test_brief_on_a_fresh_install(home: Path, capsys) -> None:
+    assert cli(home, "brief") == 0
+    assert "오늘 챙길 것이 없습니다" in capsys.readouterr().out
+
+
+def test_brief_reports_projects_and_ideas(home: Path, project: Path, capsys) -> None:
+    cli(home, "add", str(project), "--slug", "zun-app", "--name", "ZUN App")
+    capsys.readouterr()
+
+    assert cli(home, "brief") == 0
+    output = capsys.readouterr().out
+
+    assert "브리핑" in output
+    assert "## 진행 중인 프로젝트" in output
+    assert "## 대기 중인 아이디어" in output
+    assert "ZUN App 만든 과정" in output
+    assert "→ junvis reel --id" in output  # 바로 칠 수 있는 명령이 붙는다
+
+
+def test_brief_notify_does_not_fail_off_macos(home: Path, capsys) -> None:
+    """알림 전송 실패로 브리핑이 실패하지는 않는다."""
+    assert cli(home, "brief", "--notify") == 0

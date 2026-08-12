@@ -20,6 +20,7 @@ from mcp.server.stdio import stdio_server
 
 from junvis.apps.container import Junvis, build
 from junvis.core.domain.errors import JunvisError
+from junvis.features.brief.interface.mcp_tools import build_brief_tools
 from junvis.features.creator.interface.mcp_tools import build_creator_tools
 from junvis.features.project_brain.interface.mcp_tools import ToolSpec, build_project_tools
 
@@ -59,6 +60,7 @@ def collect_tools(container: Junvis) -> list[ToolSpec]:
             get_brand_voice=container.creator.get_brand_voice,
             update_brand_voice=container.creator.update_brand_voice,
         ),
+        *build_brief_tools(compose=container.brief.compose),
     ]
 
 

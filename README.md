@@ -50,6 +50,36 @@ junvis brand                              # ZUN 브랜드 성향
 
 > JUNVIS는 Instagram에 **올리지 않는다.** 기획하고 기억할 뿐, 발행은 사람이 한다.
 
+### 3. Daily Brief — 하루를 시작한다
+
+```
+$ junvis brief
+# 2026-08-12 브리핑
+
+## 멈춰 있는 작업
+- ! ZUNVIS에 커밋되지 않은 변경
+    main · 마지막 커밋: 6b4ebc1 feat: Creator Mode
+    → junvis context zunvis
+
+## ZUN 콘텐츠
+- · 아직 발행한 콘텐츠가 없습니다
+    → junvis content
+
+## 대기 중인 아이디어
+- ZUNVIS 만든 과정
+    → junvis reel --id de118215
+
+## 작업 습관
+- 최근 7일 동안 6번 작업했습니다
+- 가장 활발한 시간대: 22시
+```
+
+일정 · 멈춰 있는 작업 · 할 일 · 열린 이슈 · ZUN 콘텐츠 · 아이디어 · 프로젝트 · AI 소식 · 작업 습관을 **우선순위대로** 모은다.
+
+순서는 표현이 아니라 도메인 규칙이다. 마지막 업로드 이후 14일이 지나면 ZUN 콘텐츠가 열린 이슈보다 위로 올라온다 — 브랜드 성장이 장기 목표이기 때문이다.
+
+캘린더는 macOS Calendar.app, 뉴스는 Hacker News, 작업 습관은 Trace에서 온다. **어느 하나가 실패해도 나머지는 나온다.**
+
 ### Claude Code에 붙이기
 
 `~/.claude.json` 또는 프로젝트 `.mcp.json`:
@@ -66,14 +96,14 @@ junvis brand                              # ZUN 브랜드 성향
 
 노출되는 도구:
 
-| Project Brain | Creator |
-|---|---|
-| `junvis_project_list` | `junvis_content_create` |
-| `junvis_project_context` | `junvis_content_list` |
-| `junvis_project_search` | `junvis_content_get` |
-| `junvis_project_register` | `junvis_content_dismiss` |
-| `junvis_project_remember` | `junvis_content_published` |
-| `junvis_project_refresh` | `junvis_brand_voice` |
+| Project Brain | Creator | Brief |
+|---|---|---|
+| `junvis_project_list` | `junvis_content_create` | `junvis_daily_brief` |
+| `junvis_project_context` | `junvis_content_list` | |
+| `junvis_project_search` | `junvis_content_get` | |
+| `junvis_project_register` | `junvis_content_dismiss` | |
+| `junvis_project_remember` | `junvis_content_published` | |
+| `junvis_project_refresh` | `junvis_brand_voice` | |
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
@@ -85,12 +115,15 @@ uv venv && uv pip install -e ".[dev]"
 
 Python 3.11+ 필요. macOS 우선 설계이며 Windows 기능은 구현하지 않는다.
 
-### 자동 갱신 (launchd)
+### 정기 작업 (launchd)
 
 ```bash
-./scripts/install-launchd.sh      # 6시간마다 스냅샷 갱신
+./scripts/install-launchd.sh                    # 스냅샷 갱신 + 평일 아침 브리핑
+./scripts/install-launchd.sh --brief-hour 8     # 브리핑 시각 변경
 ./scripts/install-launchd.sh --uninstall
 ```
+
+자체 상주 데몬을 띄우지 않는다. macOS에는 이미 launchd가 있고, 재부팅·절전 복귀를 OS가 처리한다. 아침 브리핑은 알림 센터로 한 줄 요약을 보낸다.
 
 ## 구조
 
@@ -104,11 +137,17 @@ src/junvis/
 │   │   ├── infrastructure/  # SQLite · git · GitHub 어댑터
 │   │   ├── interface/       # MCP 도구 · 이벤트 구독자
 │   │   └── contracts.py     # 다른 feature에 공개하는 전부
-│   └── creator/             # 같은 구조
+│   ├── creator/             # 같은 구조
+│   └── brief/               # 같은 구조
 └── apps/        # 조립 루트 — cli · mcp_server · adapters
 ```
 
-`project_brain`은 `creator`를 **임포트하지 않는다.** 그런데도 프로젝트를 등록하면 릴스 제안이 생긴다 — 둘은 Event Bus로만 만나고, 프로젝트 컨텍스트가 필요할 때는 조립 루트(`apps/adapters.py`)가 이어 붙인다.
+**feature는 서로를 임포트하지 않는다.** 그런데도 프로젝트를 등록하면 릴스 제안이 생기고, 브리핑은 세 곳의 데이터를 모은다.
+
+- `project_brain` ↔ `creator`: Event Bus (`project.registered` → 릴스 제안)
+- `brief` → 나머지: 자기 입력 형태를 스스로 정의하고 `apps/adapters.py`가 채운다
+
+이 규칙은 import-linter 계약 9개로 CI에서 강제된다.
 
 의존성은 항상 안쪽을 향한다. 이 규칙은 문서가 아니라 **import-linter 계약으로 강제**된다:
 
@@ -125,6 +164,7 @@ pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증�
 | [`docs/01-ANALYSIS.md`](docs/01-ANALYSIS.md) | 오픈소스 7종 분석 — 장점/단점/가져올 것/가져오면 안 되는 것 |
 | [`docs/02-ARCHITECTURE.md`](docs/02-ARCHITECTURE.md) | 아키텍처 설계 + MVP 태스크 분해 |
 | [`docs/03-CREATOR-MODE.md`](docs/03-CREATOR-MODE.md) | Creator Mode 설계 + ModelPort |
+| [`docs/04-DAILY-BRIEF.md`](docs/04-DAILY-BRIEF.md) | Daily Brief 설계 + 우선순위 규칙 |
 
 ## 핵심 결정
 

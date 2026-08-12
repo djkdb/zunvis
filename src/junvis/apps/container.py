@@ -14,7 +14,12 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from junvis.apps.adapters import ProjectContextAdapter
+from junvis.apps.adapters import (
+    BrandInterestsAdapter,
+    ContentDigestAdapter,
+    ProjectContextAdapter,
+    ProjectDigestAdapter,
+)
 from junvis.core.eventbus.bus import DrainReport, EventBus
 from junvis.core.eventbus.outbox import SqliteOutbox
 from junvis.core.model.ollama import OllamaAdapter
@@ -23,6 +28,10 @@ from junvis.core.persistence import CORE_MIGRATIONS, Database
 from junvis.core.policy.engine import ConfirmPort, PolicyEngine
 from junvis.core.trace.recorder import TraceRecorder
 from junvis.core.trace.store import SqliteTraceStore
+from junvis.features.brief.application.use_cases.compose_briefing import ComposeBriefing
+from junvis.features.brief.infrastructure.calendar_adapter import MacCalendarAdapter
+from junvis.features.brief.infrastructure.habit_analyzer import TraceHabitAnalyzer
+from junvis.features.brief.infrastructure.news_adapter import HackerNewsAdapter
 from junvis.features.creator.application.use_cases.generate_content import GenerateContent
 from junvis.features.creator.application.use_cases.lifecycle import (
     DismissContent,
@@ -110,6 +119,13 @@ class Creator:
 
 
 @dataclass
+class Brief:
+    """brief의 유스케이스 묶음."""
+
+    compose: ComposeBriefing
+
+
+@dataclass
 class Junvis:
     """조립된 JUNVIS 인스턴스."""
 
@@ -122,6 +138,7 @@ class Junvis:
     model: ModelPort
     projects: ProjectBrain
     creator: Creator
+    brief: Brief
 
     def drain(self, limit: int = 100) -> DrainReport:
         """미처리 비동기 이벤트를 소비한다. 진입점이 작업 후 호출한다."""
@@ -165,12 +182,23 @@ def build(
     # 그대로 UnitOfWorkPort를 만족한다. 별도 래퍼 클래스를 만들 이유가 없다.
     unit_of_work = db.transaction
 
+    # 저장소는 조립 루트가 소유한다. 여러 feature와 brief가 같은 저장소를
+    # 서로 다른 방식으로(추적하며/추적 없이) 감싸야 하기 때문이다.
+    project_repository = SqliteProjectRepository(db)
+    content_repository = SqliteContentRepository(db)
+    brand_voice = SqliteBrandVoiceStore(db)
+
     resolved_model = model or OllamaAdapter()
     projects = _build_project_brain(
-        db, bus, policy, tracer, unit_of_work, offline=offline
+        project_repository, bus, policy, tracer, unit_of_work, offline=offline
     )
     creator = _build_creator(
-        db, bus, policy, tracer, unit_of_work, projects, resolved_model
+        content_repository, brand_voice, bus, policy, tracer,
+        unit_of_work, projects, resolved_model,
+    )
+    brief = _build_brief(
+        db, project_repository, content_repository, brand_voice, policy, tracer,
+        offline=offline,
     )
 
     register_project_subscribers(bus, projects.refresh)
@@ -186,13 +214,13 @@ def build(
         model=resolved_model,
         projects=projects,
         creator=creator,
+        brief=brief,
     )
 
 
 def _build_project_brain(
-    db, bus, policy, tracer, unit_of_work, *, offline: bool
+    repository, bus, policy, tracer, unit_of_work, *, offline: bool
 ) -> ProjectBrain:
-    repository = SqliteProjectRepository(db)
     git = GitAdapter()
     scanner = ProjectScanner()
     issues = None if offline else GitHubIssueAdapter()
@@ -212,10 +240,15 @@ def _build_project_brain(
 
 
 def _build_creator(
-    db, bus, policy, tracer, unit_of_work, projects: ProjectBrain, model: ModelPort
+    repository,
+    brand_voice,
+    bus,
+    policy,
+    tracer,
+    unit_of_work,
+    projects: ProjectBrain,
+    model: ModelPort,
 ) -> Creator:
-    repository = SqliteContentRepository(db)
-    brand_voice = SqliteBrandVoiceStore(db)
     generator = LlmScriptGenerator(model)
     # creator는 project_brain을 모른다. 여기서 어댑터로 이어 붙인다.
     project_context = ProjectContextAdapter(projects.load_context)
@@ -236,4 +269,30 @@ def _build_creator(
         get_brand_voice=GetBrandVoice(brand_voice, policy=policy, tracer=tracer),
         update_brand_voice=UpdateBrandVoice(brand_voice, policy=policy, tracer=tracer),
         suggest=SuggestForProject(repository, bus, unit_of_work, tracer=tracer),
+    )
+
+
+def _build_brief(
+    db, project_repository, content_repository, brand_voice, policy, tracer, *, offline: bool
+) -> Brief:
+    """brief는 다른 feature를 모른다. 어댑터로만 이어 붙인다.
+
+    캘린더와 뉴스는 각각 macOS 권한과 네트워크를 요구한다. 둘 다 없어도
+    브리핑은 나와야 하므로, 실패는 유스케이스가 흡수한다.
+
+    수집용 조회에는 **Trace를 붙이지 않는다.** 브리핑이 자기 조회를 기록하면
+    "작업 습관"이 브리핑 자신의 활동으로 채워진다. 사용자가 직접 부른
+    `junvis list`와 브리핑이 내부적으로 읽는 것은 다른 사건이다.
+    """
+    return Brief(
+        compose=ComposeBriefing(
+            ProjectDigestAdapter(ListProjects(project_repository)),
+            ContentDigestAdapter(ListContent(content_repository)),
+            calendar=MacCalendarAdapter(),
+            habits=TraceHabitAnalyzer(db),
+            news=None if offline else HackerNewsAdapter(),
+            interests=BrandInterestsAdapter(GetBrandVoice(brand_voice)),
+            policy=policy,
+            tracer=tracer,
+        )
     )

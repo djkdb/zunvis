@@ -48,7 +48,11 @@ layers = ["junvis.apps", "junvis.features", "junvis.core"]
 [[tool.importlinter.contracts]]
 name = "2. feature 내부는 interface > infrastructure > application > domain"
 type = "layers"
-containers = ["junvis.features.project_brain", "junvis.features.creator"]
+containers = [
+    "junvis.features.project_brain",
+    "junvis.features.creator",
+    "junvis.features.brief",
+]
 layers = ["interface", "infrastructure", "application", "domain"]
 
 [[tool.importlinter.contracts]]
@@ -57,6 +61,7 @@ type = "forbidden"
 source_modules = [
     "junvis.features.project_brain.domain",
     "junvis.features.creator.domain",
+    "junvis.features.brief.domain",
     "junvis.core.domain",
 ]
 forbidden_modules = [
@@ -73,6 +78,7 @@ type = "forbidden"
 source_modules = [
     "junvis.features.project_brain.application",
     "junvis.features.creator.application",
+    "junvis.features.brief.application",
 ]
 forbidden_modules = ["sqlite3", "subprocess", "urllib", "mcp"]
 
@@ -102,4 +108,18 @@ allow_indirect_imports = true
 name = "7. project_brain은 creator를 전혀 모른다"
 type = "forbidden"
 source_modules = ["junvis.features.project_brain"]
-forbidden_modules = ["junvis.features.creator"]
+forbidden_modules = ["junvis.features.creator", "junvis.features.brief"]
+
+# brief는 모든 것을 읽지만 아무것도 임포트하지 않는다.
+# 입력 형태를 스스로 정의하고, 조립 루트가 어댑터로 채운다.
+[[tool.importlinter.contracts]]
+name = "8. brief는 다른 feature를 전혀 임포트하지 않는다"
+type = "forbidden"
+source_modules = ["junvis.features.brief"]
+forbidden_modules = ["junvis.features.project_brain", "junvis.features.creator"]
+
+[[tool.importlinter.contracts]]
+name = "9. creator는 brief를 모른다"
+type = "forbidden"
+source_modules = ["junvis.features.creator"]
+forbidden_modules = ["junvis.features.brief"]

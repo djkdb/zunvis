@@ -38,6 +38,13 @@ class ProjectSummary:
     note_count: int
     local_path: str | None
     updated_at: datetime
+    #: 미리보기용 상위 몇 건. 전체가 필요하면 Context Pack을 쓴다.
+    open_todos: tuple[str, ...] = ()
+    open_issues: tuple[str, ...] = ()
+    last_commit_at: datetime | None = None
+
+    #: 요약에 실을 항목 수. 브리핑에서 한 프로젝트가 화면을 독차지하지 않게 한다.
+    PREVIEW_LIMIT = 5
 
     @classmethod
     def of(cls, project: Project) -> ProjectSummary:
@@ -59,4 +66,17 @@ class ProjectSummary:
             note_count=len(project.notes),
             local_path=str(project.local_path) if project.local_path else None,
             updated_at=project.updated_at,
+            open_todos=tuple(
+                todo.text for todo in project.todos if not todo.done
+            )[: cls.PREVIEW_LIMIT],
+            open_issues=tuple(
+                issue.summary() for issue in snapshot.open_issues
+            )[: cls.PREVIEW_LIMIT]
+            if snapshot
+            else (),
+            last_commit_at=(
+                snapshot.recent_commits[0].authored_at
+                if snapshot and snapshot.recent_commits
+                else None
+            ),
         )
