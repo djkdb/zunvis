@@ -17,6 +17,8 @@
     padding: 0 8vw; line-height: 1.5;
   }
   #caption.on { opacity: 1; }
+  /* 깨어 있을 때 뜨는 것은 JUNVIS가 한 말이 아니라 안내다. 그렇게 보여야 한다. */
+  #caption.hint { color: #6f9dc4; font-size: clamp(13px, 1.7vw, 18px); }
   #status {
     position: fixed; top: 18px; left: 0; right: 0; text-align: center;
     color: #4d7ba8; font-size: 12px; letter-spacing: .22em;
@@ -209,6 +211,7 @@ function apply(presence, text) {
 
   captionBox.textContent = text;
   captionBox.classList.toggle('on', Boolean(text) && presence !== 'asleep');
+  captionBox.classList.toggle('hint', presence === 'awake');
 }
 
 resize();

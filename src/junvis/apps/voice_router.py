@@ -36,6 +36,8 @@ class Route:
     name: str
     keywords: tuple[str, ...]
     run: Callable[[str], str]
+    #: 사용자에게 보여줄 말투 그대로의 예시.
+    example: str = ""
 
     def matches(self, command: str) -> bool:
         return any(keyword in command for keyword in self.keywords)
@@ -56,10 +58,14 @@ class VoiceCommandRouter:
         self._generate_content = generate_content
         # 순서가 곧 우선순위다. 먼저 걸리는 규칙이 이긴다.
         self._routes = (
-            Route("brief", ("브리핑", "브리프", "오늘", "brief"), self._brief),
-            Route("content", ("릴스", "캐러셀", "콘텐츠", "reel"), self._content),
-            Route("projects", ("프로젝트", "project"), self._projects),
+            Route("brief", ("브리핑", "브리프", "오늘", "brief"), self._brief, "오늘 브리핑"),
+            Route("content", ("릴스", "캐러셀", "콘텐츠", "reel"), self._content, "릴스 만들어줘"),
+            Route("projects", ("프로젝트", "project"), self._projects, "프로젝트 목록"),
         )
+
+    def examples(self) -> tuple[str, ...]:
+        """규칙에서 직접 뽑는다. 안내와 실제가 어긋날 수 없다."""
+        return tuple(route.example for route in self._routes)
 
     def handle(self, command: str) -> str:
         lowered = command.lower()

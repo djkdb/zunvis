@@ -51,6 +51,14 @@ class CommandHandlerPort(Protocol):
         다른 feature를 임포트하지 않는다.
         """
 
+    def examples(self) -> tuple[str, ...]:
+        """지금 말할 수 있는 것들.
+
+        음성 인터페이스에는 메뉴가 없다. "네?" 하고 조용해지면 사용자는
+        무엇을 말해야 할지 모른 채로 남는다. 라우터만이 무엇을 알아듣는지
+        알고 있으므로, 여기서 물어본다.
+        """
+
 
 class PresencePort(Protocol):
     """지금 상태를 사람에게 보여준다.

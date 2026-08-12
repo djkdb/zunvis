@@ -121,6 +121,7 @@ def cmd_listen(args, junvis: Junvis) -> int:
 
     print(greeting, file=sys.stderr)
     print(f"호출어: {', '.join(junvis.voice.config.words)}", file=sys.stderr)
+    print(f"할 수 있는 말: {'  ·  '.join(junvis.voice.examples)}", file=sys.stderr)
 
     state = ListenerState()
     try:

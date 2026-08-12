@@ -102,6 +102,17 @@ class HandleUtterance:
             logger.debug("Intent Judge 실패, 통과시킴: %s", exc)
             return True
 
+    def _hint(self) -> str:
+        """지금 말할 수 있는 것들. 라우터가 모르면 조용히 비운다."""
+        examples = getattr(self._handler, "examples", None)
+        if examples is None:
+            return ""
+        try:
+            return "  ·  ".join(example for example in examples() if example)
+        except Exception as exc:  # pragma: no cover - 방어적
+            logger.debug("예시를 가져오지 못했습니다: %s", exc)
+            return ""
+
     def _show(self, presence: Presence, text: str = "") -> None:
         """장식이 명령을 죽이지 않게 한다. 화면은 언제든 없을 수 있다."""
         if self._presence is None:
@@ -141,7 +152,8 @@ class HandleUtterance:
         )
         # 말이 끝나도 창이 열려 있다. 화면도 그대로 깨어 있어야 사용자가
         # 호출어 없이 이어 말해도 된다는 것을 안다.
-        self._show(Presence.AWAKE)
+        # 무엇을 말할 수 있는지도 함께 띄운다 — 음성에는 메뉴가 없다.
+        self._show(Presence.AWAKE, self._hint())
         return VoiceOutcome(GateDecision.ACT, command, answer, next_state)
 
     def _ignore(

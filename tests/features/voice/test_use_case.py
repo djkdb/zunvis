@@ -203,11 +203,11 @@ class SpyPresence:
         return [presence for presence, _ in self.shown]
 
 
-def with_presence(bus, **kwargs):
+def with_presence(bus, *, judge=None, handler=None):
     presence = SpyPresence()
     use_case = HandleUtterance(
-        kwargs.pop("judge", None) or FakeJudge(),
-        kwargs.pop("handler", None) or FakeHandler(),
+        judge or FakeJudge(),
+        handler or FakeHandler(),
         NullTts(),
         bus,
         config=WakeWordConfig(),
@@ -270,3 +270,25 @@ def test_a_broken_screen_does_not_break_the_command(bus) -> None:
 
     assert outcome.acted
     assert handler.commands == ["브리핑"]
+
+
+class HandlerWithExamples(FakeHandler):
+    def examples(self) -> tuple[str, ...]:
+        return ("오늘 브리핑", "프로젝트 목록")
+
+
+def test_waking_up_shows_what_can_be_said(bus) -> None:
+    """음성에는 메뉴가 없다. "네?" 하고 조용해지면 사용자는 막힌다."""
+    use_case, presence = with_presence(bus, handler=HandlerWithExamples())
+
+    use_case(heard("자비스"), ListenerState())
+
+    assert presence.shown[-1] == ("awake", "오늘 브리핑  ·  프로젝트 목록")
+
+
+def test_a_handler_without_examples_is_fine(bus) -> None:
+    use_case, presence = with_presence(bus)
+
+    use_case(heard("자비스"), ListenerState())
+
+    assert presence.shown[-1] == ("awake", "")

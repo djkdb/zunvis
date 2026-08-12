@@ -172,6 +172,8 @@ class Voice:
     config: WakeWordConfig
     #: 오브(`junvis orb`)가 읽는 상태 파일. 듣기와 화면은 다른 프로세스다.
     presence_path: Path
+    #: 지금 말할 수 있는 것들. 음성에는 메뉴가 없으니 어딘가에는 적어야 한다.
+    examples: tuple[str, ...]
 
 
 @dataclass
@@ -420,6 +422,7 @@ def _build_voice(
         tts=resolved_tts,
         config=config,
         presence_path=presence.path,
+        examples=router.examples(),
     )
 
 
