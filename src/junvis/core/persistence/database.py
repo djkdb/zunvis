@@ -9,12 +9,32 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from junvis.core.domain.event import utcnow
 
 MEMORY = ":memory:"
+
+
+@dataclass(frozen=True)
+class MigrationSource:
+    """마이그레이션 묶음 하나와 그 **소유자**.
+
+    네임스페이스를 디렉터리 이름에서 유추하지 않고 명시하게 한다.
+    모든 마이그레이션 폴더는 이름이 `migrations`라서, 유추에 기대면
+    core의 `001_init.sql`과 feature의 `001_init.sql`이 조용히 충돌한다.
+    """
+
+    owner: str
+    directory: Path
+
+    def entries(self) -> list[tuple[str, Path]]:
+        return [
+            (f"{self.owner}/{path.name}", path)
+            for path in sorted(self.directory.glob("*.sql"))
+        ]
 
 
 class Database:
@@ -104,12 +124,12 @@ class Database:
 
     # -- 마이그레이션 -------------------------------------------------------
 
-    def migrate(self, *directories: Path) -> list[str]:
+    def migrate(self, *sources: MigrationSource) -> list[str]:
         """core와 각 feature가 자기 스키마를 소유한다.
 
         feature 테이블을 core 마이그레이션에 몰아넣으면 Bounded Context
-        경계가 스키마에서부터 무너진다. 그래서 디렉터리를 여러 개 받는다.
-        적용된 이름은 `<디렉터리명>/<파일명>`으로 기록해 충돌을 피한다.
+        경계가 스키마에서부터 무너진다. 그래서 소유자별 묶음을 받는다.
+        적용된 이름은 `<소유자>/<파일명>`으로 기록한다.
 
         주의: sqlite3의 `executescript()`는 실행 전에 대기 중인 트랜잭션을
         암묵적으로 커밋한다. 그래서 스크립트와 기록을 한 트랜잭션으로 묶을
@@ -126,9 +146,8 @@ class Database:
         )
         applied = {row["name"] for row in self.query("SELECT name FROM schema_migrations")}
         newly: list[str] = []
-        for directory in directories:
-            for sql_file in sorted(Path(directory).glob("*.sql")):
-                name = f"{Path(directory).name}/{sql_file.name}"
+        for source in sources:
+            for name, sql_file in source.entries():
                 if name in applied:
                     continue
                 self.connection.executescript(sql_file.read_text(encoding="utf-8"))

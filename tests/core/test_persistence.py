@@ -31,11 +31,38 @@ def test_migrate_is_idempotent() -> None:
     database.close()
 
 
-def test_migration_names_are_namespaced_by_directory(db: Database) -> None:
-    """core와 feature가 같은 파일명을 써도 충돌하지 않아야 한다."""
+def test_migration_names_are_namespaced_by_owner(db: Database) -> None:
+    """모든 마이그레이션 폴더 이름이 `migrations`라서 소유자를 명시해야 한다.
+
+    디렉터리 이름으로 유추하면 core의 001과 feature의 001이 조용히 충돌한다.
+    """
     applied = {row["name"] for row in db.query("SELECT name FROM schema_migrations")}
-    assert any(name.startswith("migrations/") for name in applied)
-    assert len(applied) == 2
+    assert applied == {
+        "core/001_core.sql",
+        "project_brain/001_project_brain.sql",
+        "creator/001_creator.sql",
+    }
+
+
+def test_same_filename_from_different_owners_does_not_collide(tmp_path) -> None:
+    from junvis.core.persistence import MigrationSource
+
+    for owner in ("alpha", "beta"):
+        directory = tmp_path / owner / "migrations"
+        directory.mkdir(parents=True)
+        (directory / "001_init.sql").write_text(
+            f"CREATE TABLE IF NOT EXISTS {owner}_t (id INTEGER);", encoding="utf-8"
+        )
+
+    database = Database(MEMORY)
+    applied = database.migrate(
+        MigrationSource("alpha", tmp_path / "alpha" / "migrations"),
+        MigrationSource("beta", tmp_path / "beta" / "migrations"),
+    )
+
+    assert applied == ["alpha/001_init.sql", "beta/001_init.sql"]
+    assert {"alpha_t", "beta_t"} <= tables(database)
+    database.close()
 
 
 def test_file_database_persists_across_connections(tmp_path) -> None:

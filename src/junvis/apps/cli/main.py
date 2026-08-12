@@ -1,4 +1,4 @@
-"""JUNVIS CLI (M10).
+"""JUNVIS CLI.
 
 argparse만 쓴다. 의존성을 하나 줄이면 macOS에서 설치가 하나 쉬워진다.
 """
@@ -10,15 +10,24 @@ import sys
 from pathlib import Path
 
 from junvis.apps.cli.confirm import TerminalConfirmer
-from junvis.apps.container import build
+from junvis.apps.container import Junvis, build
 from junvis.core.domain.errors import JunvisError
+from junvis.features.creator.application.dto import ContentSummary
+from junvis.features.creator.domain.value_objects import ContentFormat
 from junvis.features.project_brain.application.dto import (
     ProjectSummary,
     RegisterProjectCommand,
 )
 
+STATUS_LABEL = {
+    "suggested": "제안",
+    "drafted": "초안",
+    "published": "발행됨",
+    "dismissed": "버림",
+}
 
-def _print_summary(summary: ProjectSummary) -> None:
+
+def _print_project(summary: ProjectSummary) -> None:
     print(f"{summary.slug} — {summary.name}")
     if summary.purpose:
         print(f"  목적   : {summary.purpose}")
@@ -34,6 +43,19 @@ def _print_summary(summary: ProjectSummary) -> None:
         print(f"  TODO   : {summary.open_todo_count}건")
 
 
+def _print_content(summary: ContentSummary) -> None:
+    label = STATUS_LABEL.get(summary.status, summary.status)
+    print(f"[{label}] {summary.subject}  ({summary.id[:8]})")
+    if summary.hook:
+        print(f"  Hook   : {summary.hook}")
+    if summary.scene_count:
+        print(f"  장면   : {summary.scene_count}개 · {summary.duration_seconds}초")
+    if summary.source_project_slug:
+        print(f"  프로젝트: {summary.source_project_slug}")
+    if summary.published_url:
+        print(f"  발행   : {summary.published_url}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="junvis", description="JUNVIS — 개인 AI OS")
     parser.add_argument("--home", type=Path, help="JUNVIS 홈 (기본: ~/.junvis)")
@@ -41,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-y", "--yes", action="store_true", help="확인 요구를 자동 승인한다")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    # -- Project Brain ------------------------------------------------------
     add = sub.add_parser("add", help="프로젝트를 등록하거나 갱신한다")
     add.add_argument("path", nargs="?", type=Path, default=Path("."), help="프로젝트 경로")
     add.add_argument("--slug")
@@ -65,6 +88,37 @@ def build_parser() -> argparse.ArgumentParser:
     refresh = sub.add_parser("refresh", help="스냅샷을 다시 수집한다")
     refresh.add_argument("slug", nargs="?", help="생략하면 전부 갱신한다")
 
+    # -- Creator Mode -------------------------------------------------------
+    reel = sub.add_parser("reel", help="릴스/캐러셀 기획을 한 번에 생성한다")
+    reel.add_argument("subject", nargs="?", help="주제 (--id를 쓰면 생략)")
+    reel.add_argument("--id", help="기존 제안 id에 대본을 붙인다")
+    reel.add_argument("--project", help="근거로 쓸 프로젝트 slug")
+    reel.add_argument("--carousel", action="store_true", help="릴스 대신 캐러셀로")
+    reel.add_argument("--direction", default="", help="추가 지시")
+
+    content = sub.add_parser("content", help="콘텐츠 목록")
+    content.add_argument(
+        "--status", choices=["suggested", "drafted", "published", "dismissed"]
+    )
+    content.add_argument("--limit", type=int, default=50)
+
+    show = sub.add_parser("show", help="콘텐츠 전체 대본을 출력한다")
+    show.add_argument("id")
+
+    dismiss = sub.add_parser("dismiss", help="제안이나 초안을 버린다")
+    dismiss.add_argument("id")
+    dismiss.add_argument("--reason", default="")
+
+    published = sub.add_parser("published", help="발행 사실을 기록한다")
+    published.add_argument("id")
+    published.add_argument("--url")
+
+    brand = sub.add_parser("brand", help="ZUN 브랜드 성향을 보거나 바꾼다")
+    brand.add_argument("--topics", nargs="*", help="다루는 주제 목록")
+    brand.add_argument("--tone")
+    brand.add_argument("--audience")
+
+    # -- 운영 ---------------------------------------------------------------
     sub.add_parser("drain", help="밀린 비동기 이벤트를 처리한다")
     sub.add_parser("doctor", help="상태를 점검한다")
     return parser
@@ -84,79 +138,202 @@ def main(argv: list[str] | None = None) -> int:
         container.close()
 
 
-def _dispatch(args: argparse.Namespace, container) -> int:
-    if args.command == "add":
-        summary = container.register(
-            RegisterProjectCommand(
-                name=args.name,
-                slug=args.slug,
-                path=args.path,
-                purpose=args.purpose,
-                architecture_note=args.architecture_note,
-            )
+def _dispatch(args: argparse.Namespace, junvis: Junvis) -> int:
+    handler = _HANDLERS.get(args.command)
+    return handler(args, junvis) if handler else 2
+
+
+# -- Project Brain -----------------------------------------------------------
+
+
+def _cmd_add(args, junvis: Junvis) -> int:
+    summary = junvis.projects.register(
+        RegisterProjectCommand(
+            name=args.name,
+            slug=args.slug,
+            path=args.path,
+            purpose=args.purpose,
+            architecture_note=args.architecture_note,
         )
-        container.drain()  # 등록 직후 스냅샷 수집을 여기서 처리한다
-        # 수집 결과가 반영된 최신 상태를 보여준다
-        latest = next(
-            (s for s in container.list_projects() if s.slug == summary.slug), summary
+    )
+    junvis.drain()  # 스냅샷 수집과 콘텐츠 제안을 여기서 처리한다
+    latest = next(
+        (s for s in junvis.projects.list_all() if s.slug == summary.slug), summary
+    )
+    _print_project(latest)
+
+    suggestions = [
+        c
+        for c in junvis.creator.list_all(status="suggested")
+        if c.source_project_slug == summary.slug
+    ]
+    if suggestions:
+        print()
+        print(f'제안: "{suggestions[0].subject}" 릴스 만들까요?')
+        print(f"  → junvis reel --id {suggestions[0].id[:8]}")
+    return 0
+
+
+def _cmd_list(_args, junvis: Junvis) -> int:
+    summaries = junvis.projects.list_all()
+    if not summaries:
+        print("등록된 프로젝트가 없습니다. `junvis add <경로>` 로 시작하세요.")
+        return 0
+    for summary in summaries:
+        _print_project(summary)
+        print()
+    return 0
+
+
+def _cmd_context(args, junvis: Junvis) -> int:
+    print(junvis.projects.load_context(args.slug, budget_tokens=args.budget).to_markdown())
+    return 0
+
+
+def _cmd_search(args, junvis: Junvis) -> int:
+    hits = junvis.projects.search(args.query, limit=args.limit)
+    if not hits:
+        print("검색 결과가 없습니다.")
+        return 1
+    for summary in hits:
+        _print_project(summary)
+        print()
+    return 0
+
+
+def _cmd_remember(args, junvis: Junvis) -> int:
+    summary = junvis.projects.remember(args.slug, args.text)
+    print(f"기억했습니다. ({summary.slug}, 메모 {summary.note_count}건)")
+    return 0
+
+
+def _cmd_refresh(args, junvis: Junvis) -> int:
+    slugs = [args.slug] if args.slug else [s.slug for s in junvis.projects.list_all()]
+    for slug in slugs:
+        _print_project(junvis.projects.refresh(slug))
+    return 0
+
+
+# -- Creator Mode ------------------------------------------------------------
+
+
+def _resolve_content_id(junvis: Junvis, prefix: str) -> str:
+    """id 앞 8자만 쳐도 되게 한다. 32자 hex를 손으로 옮겨 적을 수는 없다."""
+    if len(prefix) >= 32:
+        return prefix
+    matches = [c.id for c in junvis.creator.list_all(limit=200) if c.id.startswith(prefix)]
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        return prefix  # 유스케이스가 ContentNotFound를 던지게 둔다
+    raise JunvisError(f"id '{prefix}'가 {len(matches)}건과 겹칩니다. 더 길게 쓰세요.")
+
+
+def _cmd_reel(args, junvis: Junvis) -> int:
+    if not args.subject and not args.id:
+        print("오류: 주제나 --id 중 하나는 필요합니다.", file=sys.stderr)
+        return 2
+    detail = junvis.creator.generate(
+        subject=args.subject,
+        idea_id=_resolve_content_id(junvis, args.id) if args.id else None,
+        project_slug=args.project,
+        content_format=ContentFormat.CAROUSEL if args.carousel else ContentFormat.REELS,
+        direction=args.direction,
+    )
+    print(detail.markdown)
+    print(f"\n(id: {detail.summary.id})")
+    return 0
+
+
+def _cmd_content(args, junvis: Junvis) -> int:
+    summaries = junvis.creator.list_all(status=args.status, limit=args.limit)
+    if not summaries:
+        print("해당하는 콘텐츠가 없습니다.")
+        return 0
+    for summary in summaries:
+        _print_content(summary)
+        print()
+    return 0
+
+
+def _cmd_show(args, junvis: Junvis) -> int:
+    print(junvis.creator.get(_resolve_content_id(junvis, args.id)).markdown)
+    return 0
+
+
+def _cmd_dismiss(args, junvis: Junvis) -> int:
+    summary = junvis.creator.dismiss(_resolve_content_id(junvis, args.id), args.reason)
+    print(f"버렸습니다: {summary.subject}")
+    return 0
+
+
+def _cmd_published(args, junvis: Junvis) -> int:
+    summary = junvis.creator.mark_published(
+        _resolve_content_id(junvis, args.id), args.url
+    )
+    print(f"발행 기록 완료: {summary.subject}")
+    return 0
+
+
+def _cmd_brand(args, junvis: Junvis) -> int:
+    if args.topics is not None or args.tone or args.audience:
+        voice = junvis.creator.update_brand_voice(
+            topics=args.topics, tone=args.tone, audience=args.audience
         )
-        _print_summary(latest)
-        return 0
+    else:
+        voice = junvis.creator.get_brand_voice()
+    print(voice.describe())
+    return 0
 
-    if args.command == "list":
-        summaries = container.list_projects()
-        if not summaries:
-            print("등록된 프로젝트가 없습니다. `junvis add <경로>` 로 시작하세요.")
-            return 0
-        for summary in summaries:
-            _print_summary(summary)
-            print()
-        return 0
 
-    if args.command == "context":
-        print(container.load_context(args.slug, budget_tokens=args.budget).to_markdown())
-        return 0
+# -- 운영 --------------------------------------------------------------------
 
-    if args.command == "search":
-        hits = container.search(args.query, limit=args.limit)
-        if not hits:
-            print("검색 결과가 없습니다.")
-            return 1
-        for summary in hits:
-            _print_summary(summary)
-            print()
-        return 0
 
-    if args.command == "remember":
-        summary = container.remember(args.slug, args.text)
-        print(f"기억했습니다. ({summary.slug}, 메모 {summary.note_count}건)")
-        return 0
+def _cmd_drain(_args, junvis: Junvis) -> int:
+    report = junvis.drain()
+    print(
+        f"처리 {report.processed}건, 재시도 {report.failed}건, "
+        f"deadletter {report.deadlettered}건"
+    )
+    for error in report.errors:
+        print(f"  - {error}", file=sys.stderr)
+    return 0
 
-    if args.command == "refresh":
-        slugs = [args.slug] if args.slug else [s.slug for s in container.list_projects()]
-        for slug in slugs:
-            _print_summary(container.refresh(slug))
-        return 0
 
-    if args.command == "drain":
-        report = container.drain()
-        print(
-            f"처리 {report.processed}건, 재시도 {report.failed}건, "
-            f"deadletter {report.deadlettered}건"
-        )
-        for error in report.errors:
-            print(f"  - {error}", file=sys.stderr)
-        return 0
+def _cmd_doctor(_args, junvis: Junvis) -> int:
+    print(f"홈           : {junvis.home}")
+    print(f"DB           : {junvis.db.path}")
+    print(f"프로젝트     : {len(junvis.projects.list_all())}개")
+    print(f"콘텐츠       : {len(junvis.creator.list_all())}개")
+    print(f"미처리 이벤트: {junvis.outbox.pending_count()}건")
+    print(f"deadletter   : {junvis.outbox.deadletter_count()}건")
 
-    if args.command == "doctor":
-        print(f"홈           : {container.home}")
-        print(f"DB           : {container.db.path}")
-        print(f"프로젝트     : {len(container.list_projects())}개")
-        print(f"미처리 이벤트: {container.outbox.pending_count()}건")
-        print(f"deadletter   : {container.outbox.deadletter_count()}건")
-        return 0
+    available = getattr(junvis.model, "is_available", None)
+    if available is not None:
+        ok = available()
+        print(f"Ollama       : {'연결됨' if ok else '연결 안 됨 (`ollama serve` 필요)'}")
+        if ok:
+            models = junvis.model.installed_models()
+            print(f"  설치된 모델: {', '.join(models) if models else '없음'}")
+    return 0
 
-    return 2
+
+_HANDLERS = {
+    "add": _cmd_add,
+    "list": _cmd_list,
+    "context": _cmd_context,
+    "search": _cmd_search,
+    "remember": _cmd_remember,
+    "refresh": _cmd_refresh,
+    "reel": _cmd_reel,
+    "content": _cmd_content,
+    "show": _cmd_show,
+    "dismiss": _cmd_dismiss,
+    "published": _cmd_published,
+    "brand": _cmd_brand,
+    "drain": _cmd_drain,
+    "doctor": _cmd_doctor,
+}
 
 
 if __name__ == "__main__":  # pragma: no cover

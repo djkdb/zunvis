@@ -97,3 +97,59 @@ def test_refresh_all_projects(home: Path, project: Path, capsys) -> None:
 
     assert cli(home, "refresh") == 0  # slug 생략 = 전부
     assert "zun-app" in capsys.readouterr().out
+
+
+# -- Creator Mode ------------------------------------------------------------
+
+
+def test_adding_a_project_offers_a_reel(home: Path, project: Path, capsys) -> None:
+    """브리프의 '이 프로젝트 릴스 만들까?'가 실제로 뜬다."""
+    cli(home, "add", str(project), "--slug", "zun-app", "--name", "ZUN App")
+    output = capsys.readouterr().out
+
+    assert "릴스 만들까요?" in output
+    assert "junvis reel --id" in output
+
+
+def test_content_list_shows_the_suggestion(home: Path, project: Path, capsys) -> None:
+    cli(home, "add", str(project), "--slug", "zun-app", "--name", "ZUN App")
+    capsys.readouterr()
+
+    assert cli(home, "content", "--status", "suggested") == 0
+    assert "ZUN App 만든 과정" in capsys.readouterr().out
+
+
+def test_dismiss_by_short_id(home: Path, project: Path, capsys) -> None:
+    """32자 hex를 손으로 옮겨 적을 수는 없다. 앞 8자로 충분해야 한다."""
+    cli(home, "add", str(project), "--slug", "zun-app", "--name", "ZUN App")
+    capsys.readouterr()
+    cli(home, "content")
+    short_id = capsys.readouterr().out.split("(")[1].split(")")[0]
+
+    assert cli(home, "dismiss", short_id) == 0
+    assert "버렸습니다" in capsys.readouterr().out
+
+
+def test_brand_voice_shows_and_updates(home: Path, capsys) -> None:
+    assert cli(home, "brand") == 0
+    assert "바이브 코딩" in capsys.readouterr().out
+
+    assert cli(home, "brand", "--tone", "더 담백하게") == 0
+    capsys.readouterr()
+    assert cli(home, "brand") == 0
+    assert "더 담백하게" in capsys.readouterr().out
+
+
+def test_reel_without_ollama_fails_with_actionable_message(
+    home: Path, monkeypatch, capsys
+) -> None:
+    """로컬 모델이 꺼져 있는 것은 흔한 상황이다. 무엇을 해야 할지 알려줘야 한다."""
+    monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:1")
+
+    assert cli(home, "reel", "테스트 주제") == 1
+    assert "ollama serve" in capsys.readouterr().err
+
+
+def test_reel_requires_subject_or_id(home: Path, capsys) -> None:
+    assert cli(home, "reel") == 2
+    assert "주제나 --id" in capsys.readouterr().err

@@ -4,9 +4,9 @@ macOS를 위한 개인 AI OS. 개발자 AI 비서가 아니라 **CTO + 콘텐츠
 
 > 새로운 AI 비서를 만드는 것이 아니다. 최고 수준 오픈소스를 분석해 **장점만 흡수한다.**
 
-## 지금 되는 것 (MVP)
+## 지금 되는 것
 
-**Project Brain + MCP 코어.** JUNVIS가 GitHub 프로젝트를 기억하고, 그 지식을 Claude Code에 MCP로 그대로 넘긴다.
+### 1. Project Brain — 프로젝트를 기억한다
 
 ```bash
 junvis add ~/dev/zunvis --purpose "개인 AI OS"   # 등록 + git·README 자동 수집
@@ -16,6 +16,39 @@ junvis search "AI 웹앱"                          # 전문 검색(FTS5)
 junvis remember zunvis "Ollama를 기본으로 쓴다"   # 사실 주입
 junvis doctor                                    # 상태 점검
 ```
+
+### 2. Creator Mode — ZUN 브랜드 콘텐츠를 만든다
+
+새 프로젝트를 등록하면 JUNVIS가 먼저 제안한다.
+
+```
+$ junvis add ~/dev/reels-editor --name "릴스 편집기"
+릴스 편집기 — reels-editor
+  스택   : Python, Next.js
+  최근   : a1b2c3d 첫 커밋
+
+제안: "릴스 편집기 만든 과정" 릴스 만들까요?
+  → junvis reel --id 7f3a9c21
+```
+
+한 번 부르면 **9개 구성요소가 한 번에** 나온다 — Hook · 장면 구성 · 대본 · B-roll · 캡션 · 해시태그 · 썸네일 문구 · 댓글 유도 문구.
+
+```bash
+junvis reel --id 7f3a9c21                # 제안을 대본으로
+junvis reel "MCP로 Claude Code 확장하기"   # 주제로 바로
+junvis reel "..." --project zunvis        # 그 프로젝트의 실제 사실을 근거로
+junvis reel "..." --carousel              # 릴스 대신 캐러셀
+
+junvis content --status suggested         # 아직 손대지 않은 제안
+junvis show 7f3a9c21                      # 전체 대본
+junvis published 7f3a9c21 --url https://…  # 발행 기록
+junvis brand                              # ZUN 브랜드 성향
+```
+
+로컬 모델(Ollama)이 필요하다. `ollama serve` 후 `junvis doctor`로 연결을 확인한다.
+모델은 `JUNVIS_MODEL_FAST` / `JUNVIS_MODEL_DEEP`로 바꾼다.
+
+> JUNVIS는 Instagram에 **올리지 않는다.** 기획하고 기억할 뿐, 발행은 사람이 한다.
 
 ### Claude Code에 붙이기
 
@@ -31,7 +64,16 @@ junvis doctor                                    # 상태 점검
 }
 ```
 
-노출되는 도구: `junvis_project_list` · `junvis_project_context` · `junvis_project_search` · `junvis_project_register` · `junvis_project_remember` · `junvis_project_refresh`
+노출되는 도구:
+
+| Project Brain | Creator |
+|---|---|
+| `junvis_project_list` | `junvis_content_create` |
+| `junvis_project_context` | `junvis_content_list` |
+| `junvis_project_search` | `junvis_content_get` |
+| `junvis_project_register` | `junvis_content_dismiss` |
+| `junvis_project_remember` | `junvis_content_published` |
+| `junvis_project_refresh` | `junvis_brand_voice` |
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
@@ -54,16 +96,19 @@ Python 3.11+ 필요. macOS 우선 설계이며 Windows 기능은 구현하지 �
 
 ```
 src/junvis/
-├── core/        # 공유 커널 — eventbus · policy · trace · persistence
+├── core/        # 공유 커널 — eventbus · policy · trace · model · mcp · persistence
 ├── features/    # Bounded Context 하나 = 폴더 하나
-│   └── project_brain/
-│       ├── domain/          # 순수. 외부 기술을 모른다
-│       ├── application/     # 유스케이스 + Port
-│       ├── infrastructure/  # SQLite · git · GitHub 어댑터
-│       ├── interface/       # MCP 도구 · 이벤트 구독자
-│       └── contracts.py     # 다른 feature에 공개하는 전부
-└── apps/        # 조립 루트 — cli · mcp_server
+│   ├── project_brain/
+│   │   ├── domain/          # 순수. 외부 기술을 모른다
+│   │   ├── application/     # 유스케이스 + Port
+│   │   ├── infrastructure/  # SQLite · git · GitHub 어댑터
+│   │   ├── interface/       # MCP 도구 · 이벤트 구독자
+│   │   └── contracts.py     # 다른 feature에 공개하는 전부
+│   └── creator/             # 같은 구조
+└── apps/        # 조립 루트 — cli · mcp_server · adapters
 ```
+
+`project_brain`은 `creator`를 **임포트하지 않는다.** 그런데도 프로젝트를 등록하면 릴스 제안이 생긴다 — 둘은 Event Bus로만 만나고, 프로젝트 컨텍스트가 필요할 때는 조립 루트(`apps/adapters.py`)가 이어 붙인다.
 
 의존성은 항상 안쪽을 향한다. 이 규칙은 문서가 아니라 **import-linter 계약으로 강제**된다:
 
@@ -79,6 +124,7 @@ pytest          # 도메인은 외부 의존 없이 단위 테스트로 검증�
 | [`docs/JUNVIS-BRIEF.md`](docs/JUNVIS-BRIEF.md) | 원본 요구사항 |
 | [`docs/01-ANALYSIS.md`](docs/01-ANALYSIS.md) | 오픈소스 7종 분석 — 장점/단점/가져올 것/가져오면 안 되는 것 |
 | [`docs/02-ARCHITECTURE.md`](docs/02-ARCHITECTURE.md) | 아키텍처 설계 + MVP 태스크 분해 |
+| [`docs/03-CREATOR-MODE.md`](docs/03-CREATOR-MODE.md) | Creator Mode 설계 + ModelPort |
 
 ## 핵심 결정
 

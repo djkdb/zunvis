@@ -7,10 +7,10 @@ SDK 없이도 도구 계약을 테스트할 수 있고, SDK가 바뀌어도 이 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from typing import Any
 
+from junvis.core.mcp.tools import ToolResult, ToolSpec
 from junvis.features.project_brain.application.dto import (
     ProjectSummary,
     RegisterProjectCommand,
@@ -31,23 +31,6 @@ from junvis.features.project_brain.application.use_cases.register_project import
 from junvis.features.project_brain.application.use_cases.remember_note import RememberNote
 
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class ToolResult:
-    """모델이 읽을 텍스트와, 기계가 읽을 구조화 데이터."""
-
-    text: str
-    data: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class ToolSpec:
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    handler: Callable[[Mapping[str, Any]], ToolResult]
-    read_only: bool = True
 
 
 def _summary_dict(summary: ProjectSummary) -> dict[str, Any]:

@@ -22,6 +22,15 @@ EXPECTED_TOOLS = {
     "junvis_project_register",
     "junvis_project_remember",
     "junvis_project_refresh",
+    # creator는 같은 전송·같은 서버로 함께 노출된다.
+    # 대본 생성 자체는 Ollama가 필요하므로 tests/apps/test_integration.py에서
+    # EchoAdapter로 검증한다. 여기서는 도구 표면만 확인한다.
+    "junvis_content_create",
+    "junvis_content_list",
+    "junvis_content_get",
+    "junvis_content_dismiss",
+    "junvis_content_published",
+    "junvis_brand_voice",
 }
 
 

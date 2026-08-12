@@ -48,7 +48,7 @@ layers = ["junvis.apps", "junvis.features", "junvis.core"]
 [[tool.importlinter.contracts]]
 name = "2. feature 내부는 interface > infrastructure > application > domain"
 type = "layers"
-containers = ["junvis.features.project_brain"]
+containers = ["junvis.features.project_brain", "junvis.features.creator"]
 layers = ["interface", "infrastructure", "application", "domain"]
 
 [[tool.importlinter.contracts]]
@@ -56,6 +56,7 @@ name = "3. domain은 순수하다 (외부 기술을 모른다)"
 type = "forbidden"
 source_modules = [
     "junvis.features.project_brain.domain",
+    "junvis.features.creator.domain",
     "junvis.core.domain",
 ]
 forbidden_modules = [
@@ -69,7 +70,10 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "4. application은 인프라 기술을 모른다"
 type = "forbidden"
-source_modules = ["junvis.features.project_brain.application"]
+source_modules = [
+    "junvis.features.project_brain.application",
+    "junvis.features.creator.application",
+]
 forbidden_modules = ["sqlite3", "subprocess", "urllib", "mcp"]
 
 [[tool.importlinter.contracts]]
@@ -77,3 +81,25 @@ name = "5. core는 어떤 feature도 임포트하지 않는다"
 type = "forbidden"
 source_modules = ["junvis.core"]
 forbidden_modules = ["junvis.features", "junvis.apps"]
+
+# feature끼리는 서로의 contracts(공개 계약)로만 만난다.
+# 그 밖의 결합은 조립 루트(apps/adapters.py)를 거쳐야 한다.
+[[tool.importlinter.contracts]]
+name = "6. creator는 project_brain의 내부를 모른다"
+type = "forbidden"
+source_modules = ["junvis.features.creator"]
+forbidden_modules = [
+    "junvis.features.project_brain.domain",
+    "junvis.features.project_brain.application",
+    "junvis.features.project_brain.infrastructure",
+    "junvis.features.project_brain.interface",
+]
+# contracts는 공개 계약이므로 그것을 통해 닿는 것은 허용한다.
+# 금지되는 것은 내부 모듈을 **직접** 임포트하는 것이다.
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "7. project_brain은 creator를 전혀 모른다"
+type = "forbidden"
+source_modules = ["junvis.features.project_brain"]
+forbidden_modules = ["junvis.features.creator"]

@@ -20,6 +20,7 @@ from mcp.server.stdio import stdio_server
 
 from junvis.apps.container import Junvis, build
 from junvis.core.domain.errors import JunvisError
+from junvis.features.creator.interface.mcp_tools import build_creator_tools
 from junvis.features.project_brain.interface.mcp_tools import ToolSpec, build_project_tools
 
 logger = logging.getLogger(__name__)
@@ -27,22 +28,38 @@ logger = logging.getLogger(__name__)
 SERVER_NAME = "junvis"
 SERVER_VERSION = "0.1.0"
 INSTRUCTIONS = (
-    "JUNVIS는 사용자의 개발 프로젝트를 기억하는 개인 지식 계층이다. "
-    "특정 프로젝트에서 작업을 시작할 때 junvis_project_context를 먼저 불러 "
+    "JUNVIS는 사용자의 개발 프로젝트와 콘텐츠를 기억하는 개인 지식 계층이다.\n"
+    "- 특정 프로젝트에서 작업을 시작할 때 junvis_project_context를 먼저 불러 "
     "목적·기술스택·최근 커밋·TODO를 파악하라. 어떤 프로젝트가 있는지 모르면 "
-    "junvis_project_list를 부르면 된다."
+    "junvis_project_list를 부르면 된다.\n"
+    "- 사용자가 릴스·캐러셀 등 ZUN 브랜드 콘텐츠를 만들고 싶어 하면 "
+    "junvis_content_create를 써라. project 인자를 주면 그 프로젝트의 실제 "
+    "정보를 근거로 기획한다. junvis_content_list의 suggested 상태는 아직 "
+    "손대지 않은 제안이다."
 )
 
 
 def collect_tools(container: Junvis) -> list[ToolSpec]:
-    return build_project_tools(
-        register=container.register,
-        refresh=container.refresh,
-        load_context=container.load_context,
-        search=container.search,
-        list_projects=container.list_projects,
-        remember=container.remember,
-    )
+    """feature마다 자기 도구를 내놓고, 조립 루트가 모은다."""
+    return [
+        *build_project_tools(
+            register=container.projects.register,
+            refresh=container.projects.refresh,
+            load_context=container.projects.load_context,
+            search=container.projects.search,
+            list_projects=container.projects.list_all,
+            remember=container.projects.remember,
+        ),
+        *build_creator_tools(
+            generate=container.creator.generate,
+            list_content=container.creator.list_all,
+            get_content=container.creator.get,
+            dismiss=container.creator.dismiss,
+            mark_published=container.creator.mark_published,
+            get_brand_voice=container.creator.get_brand_voice,
+            update_brand_voice=container.creator.update_brand_voice,
+        ),
+    ]
 
 
 def _to_mcp_tool(spec: ToolSpec) -> types.Tool:

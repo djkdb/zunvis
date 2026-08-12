@@ -6,15 +6,25 @@
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from junvis.core.domain.event import utcnow
+# UnitOfWork와 Clock은 Context 고유 개념이 아니라 Shared Kernel에 산다.
+from junvis.core.ports import ClockPort, SystemClock, UnitOfWorkPort
 from junvis.features.project_brain.domain.model import CommitRef, IssueRef
 from junvis.features.project_brain.domain.value_objects import RepoRef, TechStack
+
+__all__ = [
+    "ClockPort",
+    "SystemClock",
+    "UnitOfWorkPort",
+    "GitReading",
+    "ScanResult",
+    "GitPort",
+    "ProjectScannerPort",
+    "IssueTrackerPort",
+]
 
 
 @dataclass(frozen=True)
@@ -48,20 +58,3 @@ class ProjectScannerPort(Protocol):
 class IssueTrackerPort(Protocol):
     def open_issues(self, repo: RepoRef, *, limit: int = 10) -> tuple[IssueRef, ...]:
         """접근할 수 없으면 빈 튜플. 이슈를 못 읽는다고 스냅샷 전체가 실패하면 안 된다."""
-
-
-class UnitOfWorkPort(Protocol):
-    """저장과 이벤트 발행을 한 경계로 묶는다."""
-
-    def __call__(self) -> AbstractContextManager[object]: ...
-
-
-class ClockPort(Protocol):
-    def now(self) -> datetime: ...
-
-
-class SystemClock:
-    """기본 시계. 테스트는 고정 시계를 주입한다."""
-
-    def now(self) -> datetime:
-        return utcnow()
