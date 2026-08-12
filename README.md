@@ -153,12 +153,20 @@ junvis say "안녕하세요"        # TTS 확인
 
 **오브는 아무것도 결정하지 않는다.** 꺼도, 죽어도 명령은 그대로 실행된다.
 
+`--native`는 **맥 내장 음성 인식**을 쓴다. brew도, Whisper 모델 내려받기도,
+Swift 컴파일도 필요 없다 — PyObjC로 `SFSpeechRecognizer`를 직접 부른다.
+
+```bash
+uv pip install -e ".[mac]"    # 이게 전부
+```
+
 박수 두 번은 **이름을 부른 것과 똑같이** 다룬다 — "네?" 하고 후속 명령을 기다린다.
-헬퍼 빌드는 [docs/08](docs/08-NATIVE-HELPER.md) 참고.
+문 닫는 소리·말소리·울림을 걸러내는 규칙은 [12개 테스트로 검증](tests/features/voice/test_clap.py)돼 있다.
+왜 Swift가 아닌지는 [docs/08 §7](docs/08-NATIVE-HELPER.md) 참고.
 
 `--stdin`이 장식이 아닌 이유: 어떤 STT를 쓰든 파이프로 연결하면 JUNVIS가 동작한다.
 
-> **상시 대기 마이크와 온디바이스 Wake word는 아직 없다.** Swift 헬퍼(`junvis-mac`)의 몫이며, 그때 `AudioSourcePort` 구현만 교체하면 판단 파이프라인은 그대로 쓴다.
+> 인식은 **온디바이스로 못박는다.** 개인 기억이 애플 서버로 나가면 안 된다.
 
 ### 5. Personal Memory — 기억하고 적용한다
 

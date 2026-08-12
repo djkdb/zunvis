@@ -26,6 +26,9 @@ from junvis.features.voice.infrastructure.audio import (
     WHISPER_MODEL_ENV,
     DEFAULT_WHISPER_BIN,
 )
+from junvis.features.voice.infrastructure.apple_speech import (
+    available as apple_speech_available,
+)
 from junvis.features.voice.infrastructure.native_source import (
     DEFAULT_HELPER,
     HELPER_BIN_ENV,
@@ -134,13 +137,22 @@ def _voice(todos: list[str]) -> None:
 
 
 def _native_helper(todos: list[str]) -> None:
-    """상시 대기와 박수는 sox/whisper로 안 된다. 네이티브 헬퍼가 있어야 한다."""
+    """상시 대기와 박수는 sox/whisper로 안 된다.
+
+    맥 내장 음성 인식이 필요하고, 그건 PyObjC 설치 한 줄이면 된다.
+    Swift 헬퍼도 같은 일을 하지만 컴파일러가 필요해 뒤로 뺀다.
+    """
+    if apple_speech_available():
+        print(f"  {OK} 맥 내장 음성 인식 — `junvis listen --native`")
+        return
+
     binary = os.environ.get(HELPER_BIN_ENV) or DEFAULT_HELPER
     if shutil.which(binary):
         print(f"  {OK} 네이티브 헬퍼: {binary} — `junvis listen --native`")
         return
-    print(f"  {MISSING} 네이티브 헬퍼 없음 (상시 대기·박수 두 번)")
-    todos.append("네이티브 헬퍼 빌드: ./scripts/build-mac.sh — 박수 두 번으로 부르려면 필요합니다")
+
+    print(f"  {MISSING} 상시 대기·박수를 쓸 수 없습니다")
+    todos.append('맥 내장 음성 인식 켜기: uv pip install -e ".[mac]" — 박수 두 번까지 됩니다')
 
 
 def _calendar(todos: list[str]) -> None:

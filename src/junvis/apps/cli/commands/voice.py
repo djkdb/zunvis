@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 
 from junvis.apps.container import Junvis
@@ -16,7 +17,7 @@ def register(sub) -> dict:
     listen.add_argument(
         "--native",
         action="store_true",
-        help="네이티브 헬퍼(junvis-mac)로 듣는다. 박수 두 번도 부름으로 친다",
+        help="맥 내장 음성 인식으로 상시 대기한다. 박수 두 번도 부름으로 친다",
     )
     listen.add_argument("--quiet", action="store_true", help="소리 내지 않고 화면에만")
 
@@ -65,6 +66,26 @@ def cmd_say(args, junvis: Junvis) -> int:
     return 0 if spoken else 1
 
 
+def _best_native_source(wake_words: tuple[str, ...]):
+    """상시 대기를 할 수 있는 것 중 되는 것을 고른다.
+
+    PyObjC가 먼저다. 컴파일러가 필요 없어 깨질 곳이 적다. Swift 헬퍼는
+    직접 빌드한 사람만 갖고 있으므로 그다음이다.
+    """
+    from junvis.features.voice.infrastructure import apple_speech
+    from junvis.features.voice.infrastructure.native_source import NativeHelperSource
+
+    if apple_speech.available():
+        return apple_speech.AppleSpeechSource(wake_words=wake_words)
+
+    helper = NativeHelperSource(wake_words=wake_words)
+    if shutil.which(helper.binary) is not None:
+        return helper
+
+    # 둘 다 없다. 더 쉬운 쪽을 알려준다.
+    return apple_speech.AppleSpeechSource(wake_words=wake_words)
+
+
 def _make_source(args, junvis: Junvis):
     """플래그를 발화 소스로 바꾼다. 준비되지 않았으면 그 자리에서 알려준다."""
     from junvis.features.voice.infrastructure.audio import (
@@ -77,13 +98,9 @@ def _make_source(args, junvis: Junvis):
         return StdinSource(), "텍스트 입력 대기 중 (한 줄 = 발화 하나, Ctrl-D로 종료)"
 
     if args.native:
-        from junvis.features.voice.infrastructure.native_source import (
-            NativeHelperSource,
-        )
-
-        # 호출어는 한 곳에서만 정한다. 헬퍼와 게이트가 다른 말을 들으면
-        # 헬퍼는 깨어나는데 JUNVIS는 무시하는 상태가 된다.
-        source = NativeHelperSource(wake_words=junvis.voice.config.words)
+        # 호출어는 한 곳에서만 정한다. 소스와 게이트가 다른 말을 들으면
+        # 마이크는 깨어나는데 JUNVIS는 무시하는 상태가 된다.
+        source = _best_native_source(junvis.voice.config.words)
         source.check()
         return source, "듣고 있습니다. 호출어 또는 박수 두 번."
 

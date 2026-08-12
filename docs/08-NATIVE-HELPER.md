@@ -1,7 +1,9 @@
 # JUNVIS — 네이티브 헬퍼 (`junvis-mac`) 설계
 
 > 단계: **설계 + 뼈대**
-> 상태: **Swift 코드는 컴파일 확인되지 않았다.** 이 저장소는 Linux다.
+> 상태: **Swift는 쓰지 않는 길로 갔다.** 실제 맥에서 Apple 툴체인이
+> 깨져 있어 컴파일 자체가 불가능했고, 같은 프레임워크를 PyObjC로
+> Python에서 그대로 부를 수 있다는 것이 답이었다. §7 참고.
 > 대신 Python 쪽과 그 사이의 계약은 전부 검증됐다.
 
 ---
@@ -109,47 +111,78 @@ macOS는 처음 쓸 때 물어본다. `junvis-mac check`가 무엇이 필요한�
 | Python 쪽(`NativeHelperSource`) | ✅ 구현·테스트 완료 |
 | 가짜 헬퍼로 전 경로 통합 테스트 | ✅ |
 | CLI 연결(`junvis listen --native`, `junvis setup`) | ✅ |
-| Swift 소스 | ⚠️ 작성됨, **컴파일 미확인** |
+| **PyObjC 어댑터**(`AppleSpeechSource`) | ✅ 실제 경로 — 컴파일 불필요 |
+| **박수 감지**(`ClapDetector`, Python) | ✅ 12개 테스트로 검증 |
+| Swift 소스 | ⚠️ 남겨 둠, 컴파일 불가(§7) |
 | 실제 박수 감지 정확도 | ❌ 하드웨어에서 맞춰야 함 |
 
 맥에서 할 일:
 
 ```bash
-./scripts/build-mac.sh          # 빌드 (오류가 나면 그 메시지를 보내주세요)
-junvis-mac check                # 권한
-junvis-mac calibrate            # 임계값
-junvis listen --native          # 붙여서 확인
+uv pip install -e ".[mac]"      # 맥 내장 음성 인식
+junvis listen --native          # 이름을 부르거나 박수 두 번
 ```
 
-빌드가 깨지면 그건 예상된 일이다. 계약이 고정되어 있으므로 Swift만 고치면 된다.
 
-### SwiftPM을 쓰지 않는 이유
+---
 
-처음에는 `Package.swift`로 `swift build`를 했다. 실제 맥에서 이렇게 죽었다.
+## 7. Swift를 포기한 이유 — 그리고 더 나은 길
+
+실제 맥에서 두 번 시도했고 두 번 다 **우리 코드에 닿기도 전에** 죽었다.
+
+**1차 (SwiftPM).**
 
 ```
 error: 'junvis-mac': Invalid manifest
-Undefined symbols for architecture arm64:
-  "PackageDescription.Package.__allocating_init(name:defaultLocalization:…)"
+Undefined symbols: PackageDescription.Package.__allocating_init(…)
 ```
 
-Command Line Tools에 딸려 오는 SwiftPM과 `PackageDescription` 라이브러리의
-버전이 어긋나면 매니페스트를 링크하지 못한다. **Swift 코드와는 아무 상관이
-없는 실패다** — 빌드 시스템이 자기 자신을 빌드하지 못한 것이다.
+**2차 (swiftc 직접).**
 
-의존성이 하나도 없는 파일 다섯 개짜리 도구에 패키지 매니저는 얻는 것 없이
-깨질 곳만 늘린다. `swiftc`로 직접 컴파일한다.
+```
+error: failed to build module 'CoreFoundation'; this SDK is not supported
+by the compiler (SDK는 swiftlang-6.0.3.1.5로 빌드됐는데, 컴파일러는
+swiftlang-6.0.3.1.10). Please select a toolchain which matches the SDK.
+error: redefinition of module 'SwiftBridging'
+```
+
+같은 `CommandLineTools` 폴더 안에서 컴파일러와 SDK 버전이 어긋나 있고,
+`SwiftBridging` 모듈이 두 modulemap에 중복 정의돼 있다. Apple 툴체인 설치가
+망가진 것이지 우리 코드의 문제가 아니다. **`main.swift` 첫 줄인
+`import AVFoundation`에서 멈췄다.**
+
+### 판단
+
+여기서 툴체인을 고치는 데 시간을 더 쓸 수도 있었다. 그러지 않았다.
+
+우리가 Swift에서 쓰려던 것 — `SFSpeechRecognizer`, `AVAudioEngine` — 은
+전부 **Objective-C 프레임워크**다. PyObjC는 이것들을 Python에서 그대로
+부른다. 컴파일러가 전혀 필요 없다.
 
 ```bash
-swiftc -O -o junvis-mac native/junvis-mac/*.swift \
-    -framework AVFoundation -framework Speech -framework EventKit \
-    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \
-    -Xlinker native/junvis-mac/Info.plist
+uv pip install -e ".[mac]"     # 이게 전부다
+junvis listen --native
 ```
 
-`Info.plist`를 실행 파일 안에 심는 것이 중요하다. 사용 설명 문자열이 없으면
-macOS는 마이크 권한을 **물어보지도 않고 거부한다.**
+얻은 것이 회피만은 아니다.
 
-같은 이유로 Swift 5.7의 축약 옵셔널 바인딩(`if let value {`)도 쓰지 않는다.
-`if let value = value {`로 풀어 쓰면 옛 툴체인에서도 컴파일된다. 이 한 줄
-차이로 빌드가 갈리는데, 얻는 것은 글자 수뿐이다.
+- **깨질 곳이 하나 줄었다.** 툴체인 버전, SDK 정합성, 링커 플래그가 전부 사라졌다.
+- **박수 감지가 검증 가능해졌다.** Swift의 `ClapDetector`는 이 저장소에서
+  한 줄도 시험할 수 없었다. Python으로 옮기니 문 닫는 소리·말소리·울림·
+  2초 간격을 구분하는 규칙을 **12개 테스트로 실제로 검증**한다. 컴파일도
+  못 해 본 코드가 오탐 규칙을 들고 있는 것보다 훨씬 낫다.
+- **`AudioSourcePort` 덕분에 도메인은 그대로다.** 구현 하나를 갈아 끼웠을 뿐이다.
+
+### Swift 헬퍼는 버리지 않는다
+
+`native/junvis-mac/`은 남겨 둔다. 화면 캡처(ScreenCaptureKit)·접근성처럼
+**PyObjC로도 어려운** 것들이 오면 그때 필요하다. 그때는 툴체인부터 고쳐야
+한다 — 이 두 오류가 뜨면 다음을 실행한다.
+
+```bash
+sudo rm -rf /Library/Developer/CommandLineTools
+sudo xcode-select --install
+```
+
+`junvis listen --native`는 PyObjC를 먼저 찾고, 없으면 `junvis-mac` 바이너리를
+찾는다. 둘 중 되는 것을 쓴다.

@@ -281,13 +281,14 @@ def test_listen_without_audio_tools_explains_what_is_missing(
     assert "--stdin" in error or "Whisper 모델" in error
 
 
-def test_listen_native_without_helper_points_at_the_build_script(
+def test_listen_native_without_anything_points_at_the_easy_install(
     home: Path, monkeypatch, capsys
 ) -> None:
+    """컴파일러를 고치라고 하지 않는다. 설치 한 줄이 더 쉬운 길이다."""
     monkeypatch.setenv("JUNVIS_MAC_BIN", "junvis-mac-없음")
 
     assert cli(home, "listen", "--native") == 1
-    assert "build-mac.sh" in capsys.readouterr().err
+    assert '[mac]' in capsys.readouterr().err
 
 
 def test_listen_native_uses_the_configured_wake_words(

@@ -48,6 +48,10 @@ class NativeHelperSource:
         self._clap_count = clap_count
         self._extra_args = extra_args
 
+    @property
+    def binary(self) -> str:
+        return self._binary
+
     def check(self) -> None:
         """말을 걸고 나서 헬퍼가 없다는 걸 알면 늦다."""
         if shutil.which(self._binary) is None:

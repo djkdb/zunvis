@@ -128,9 +128,11 @@ install_package() {
 
 # -- 3. 실행 -----------------------------------------------------------------
 
-#: 네이티브 헬퍼가 있으면 상시 대기·박수를, 없으면 있는 것으로 듣는다.
+#: 맥 내장 음성 인식(PyObjC)이 깔려 있으면 상시 대기·박수를 쓴다.
+#: 직접 빌드한 Swift 헬퍼가 있어도 된다.
 listen_flags() {
-    if command -v "${JUNVIS_MAC_BIN:-junvis-mac}" >/dev/null 2>&1; then
+    if "${VENV}/bin/python" -c "import Speech, AVFoundation" >/dev/null 2>&1 \
+        || command -v "${JUNVIS_MAC_BIN:-junvis-mac}" >/dev/null 2>&1; then
         printf '%s' "--native"
     fi
 }
@@ -138,8 +140,8 @@ listen_flags() {
 menu() {
     local flags default
     flags="$(listen_flags)"
-    # 헬퍼가 없으면 듣기는 sox·whisper·모델을 요구하다 막힌다. 막다른
-    # 길을 기본으로 두지 않는다 — 빌드가 그 전부를 대신한다.
+    # 없으면 듣기는 sox·whisper·모델을 요구하다 막힌다. 막다른 길을
+    # 기본으로 두지 않는다 — 설치 한 줄이 그 전부를 대신한다.
     default=1
     [[ -z "${flags}" ]] && default=6
 
@@ -155,8 +157,8 @@ menu() {
     say "  4) 직접 입력 (마이크 없이 텍스트로)"
     say "  5) 그냥 종료"
     if [[ -z "${flags}" ]]; then
-        say "  6) 마이크 켜기 — 맥 내장 음성 인식 빌드   ${DIM}(기본)${OFF}"
-        note "   brew도 모델 내려받기도 필요 없고 박수 두 번까지 됩니다"
+        say "  6) 마이크 켜기 — 맥 내장 음성 인식   ${DIM}(기본)${OFF}"
+        note "   brew도 Whisper 모델도 Swift 컴파일도 필요 없습니다"
     fi
     printf '\n선택 [%s]: ' "${default}"
 
@@ -170,7 +172,7 @@ menu() {
         3) "${JUNVIS}" setup ;;
         4) "${JUNVIS}" listen --stdin ;;
         5) return 0 ;;
-        6) build_helper ;;
+        6) enable_microphone ;;
         *) warn "모르는 선택입니다: ${choice}" ;;
     esac
 }
@@ -186,16 +188,34 @@ listen_with_orb() {
     trap - EXIT
 }
 
-build_helper() {
-    if ! "${HERE}/scripts/build-mac.sh"; then
-        fail "빌드에 실패했습니다. 위 메시지를 그대로 보내주세요."
+enable_microphone() {
+    # 맥 내장 음성 인식을 Python에서 그대로 부른다(PyObjC). 컴파일러가
+    # 필요 없다는 것이 핵심이다 — Swift 툴체인은 깨져 있을 수 있고,
+    # 실제로 이 맥에서 깨져 있었다.
+    say "맥 내장 음성 인식을 켭니다. 내려받을 것이 조금 있습니다…"
+    if ! install_package_extra "mac"; then
+        fail "설치에 실패했습니다. 위 메시지를 그대로 보내주세요."
         return 1
     fi
-    export PATH="${HOME}/.local/bin:${PATH}"
+
+    if ! "${VENV}/bin/python" -c "import Speech, AVFoundation" >/dev/null 2>&1; then
+        fail "설치는 됐는데 불러오지 못했습니다. 위 메시지를 보내주세요."
+        return 1
+    fi
+
     say ""
     say "${BOLD}이제 듣습니다. 이름을 부르거나 박수를 두 번 치세요.${OFF}"
+    note "처음 한 번은 마이크·음성 인식 권한을 물어봅니다. 둘 다 허용하세요."
     say ""
     listen_with_orb "--native"
+}
+
+install_package_extra() {
+    local extra="$1"
+    if command -v uv >/dev/null 2>&1; then
+        VIRTUAL_ENV="${VENV}" uv pip install -e "${HERE}[${extra}]" && return 0
+    fi
+    "${VENV}/bin/python" -m pip install -e "${HERE}[${extra}]"
 }
 
 clear
