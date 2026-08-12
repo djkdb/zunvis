@@ -23,23 +23,23 @@ struct Options {
         var index = 0
         while index < arguments.count {
             let flag = arguments[index]
-            let value = index + 1 < arguments.count ? arguments[index + 1] : nil
+            let value: String? = index + 1 < arguments.count ? arguments[index + 1] : nil
             switch flag {
             case "--wake":
-                if let value {
+                if let value = value {
                     options.wakeWords = value.split(separator: ",").map {
                         $0.trimmingCharacters(in: .whitespaces)
                     }.filter { !$0.isEmpty }
                 }
                 index += 2
             case "--clap":
-                if let value, let count = Int(value) { options.requiredClaps = count }
+                if let value = value, let count = Int(value) { options.requiredClaps = count }
                 index += 2
             case "--locale":
-                if let value { options.locale = value }
+                if let value = value { options.locale = value }
                 index += 2
             case "--clap-threshold":
-                if let value, let level = Double(value) { options.clapThreshold = level }
+                if let value = value, let level = Double(value) { options.clapThreshold = level }
                 index += 2
             default:
                 index += 1
@@ -60,7 +60,7 @@ func makeDetector(_ options: Options) -> ClapDetector {
 
 func runListen(_ options: Options) {
     AudioListener.requestPermissions { problem in
-        if let problem {
+        if let problem = problem {
             emit(.error(message: problem))
             exit(1)
         }

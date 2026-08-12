@@ -10,3 +10,6 @@ build/
 *.db-wal
 *.db-shm
 .DS_Store
+
+# swiftc가 native/junvis-mac/ 안에 직접 만드는 실행 파일
+native/junvis-mac/junvis-mac

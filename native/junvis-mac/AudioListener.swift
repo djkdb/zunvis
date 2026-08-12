@@ -34,7 +34,7 @@ final class AudioListener {
     }
 
     func start() throws {
-        guard let recognizer, recognizer.isAvailable else {
+        guard let recognizer = recognizer, recognizer.isAvailable else {
             throw HelperError.message("이 언어의 음성 인식을 쓸 수 없습니다")
         }
 
@@ -49,18 +49,18 @@ final class AudioListener {
         let sampleRate = format.sampleRate
 
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            guard let self else { return }
+            guard let self = self else { return }
             self.request?.append(buffer)
             self.inspect(buffer: buffer, sampleRate: sampleRate)
         }
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-            if let error {
+            guard let self = self else { return }
+            if let error = error {
                 emit(.error(message: "받아쓰기 실패: \(error.localizedDescription)"))
                 return
             }
-            guard let result, result.isFinal else { return }
+            guard let result = result, result.isFinal else { return }
             self.emitTranscript(result)
         }
 

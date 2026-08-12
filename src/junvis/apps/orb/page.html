@@ -1,0 +1,202 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>JUNVIS</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; height: 100%; background: #04070f; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+  #caption {
+    position: fixed; left: 0; right: 0; bottom: 7vh;
+    text-align: center; color: #cfe6ff; pointer-events: none;
+    font-size: clamp(15px, 2.4vw, 26px); letter-spacing: .01em;
+    text-shadow: 0 0 24px rgba(80, 170, 255, .55);
+    opacity: 0; transition: opacity .35s ease;
+    padding: 0 8vw; line-height: 1.5;
+  }
+  #caption.on { opacity: 1; }
+  #status {
+    position: fixed; top: 18px; left: 0; right: 0; text-align: center;
+    color: #4d7ba8; font-size: 12px; letter-spacing: .22em;
+    text-transform: uppercase; pointer-events: none;
+  }
+</style>
+
+<canvas id="sky"></canvas>
+<div id="status">asleep</div>
+<div id="caption"></div>
+
+<script>
+// JUNVIS 오브 — 상태를 보여주기만 한다. 여기서 결정되는 것은 없다.
+//
+// 서버에 /state를 물어보고 그 값에 따라 입자들의 에너지를 바꾼다.
+// 서버가 죽어도 화면은 계속 돈다(잠든 모습으로). 장식이 본체를 붙잡으면 안 된다.
+
+const canvas = document.getElementById('sky');
+const context = canvas.getContext('2d');
+const captionBox = document.getElementById('caption');
+const statusBox = document.getElementById('status');
+
+const COUNT = 340;          // 입자 수. 이보다 많으면 형태가 뭉개진다
+const CORE_RADIUS = 11;
+
+// 상태마다 다른 것은 색·속도·밀도뿐이다. 형태는 하나로 유지한다 —
+// 모양까지 바뀌면 상태 변화가 아니라 다른 화면으로 보인다.
+const MOODS = {
+  asleep:   { hue: 208, energy: 0.22, spin: 0.020, glow: 0.35, pull: 1.00 },
+  awake:    { hue: 202, energy: 1.00, spin: 0.075, glow: 1.00, pull: 0.92 },
+  thinking: { hue: 194, energy: 0.85, spin: 0.190, glow: 0.85, pull: 0.80 },
+  speaking: { hue: 186, energy: 1.00, spin: 0.090, glow: 1.15, pull: 1.06 },
+};
+
+let mood = MOODS.asleep;
+let target = MOODS.asleep;
+let width = 0, height = 0, scale = 1;
+let pulses = [];   // speaking일 때 퍼져 나가는 파동
+
+function resize() {
+  scale = window.devicePixelRatio || 1;
+  width = canvas.clientWidth;
+  height = canvas.clientHeight;
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  context.setTransform(scale, 0, 0, scale, 0, 0);
+}
+window.addEventListener('resize', resize);
+
+// 구면에 고르게 뿌린다. 단순 난수로 두면 극에 뭉친다.
+const particles = Array.from({ length: COUNT }, (_, index) => {
+  const y = 1 - (index / (COUNT - 1)) * 2;
+  const radius = Math.sqrt(Math.max(0, 1 - y * y));
+  const theta = index * Math.PI * (3 - Math.sqrt(5));   // 황금각
+  return {
+    x: Math.cos(theta) * radius,
+    y: y,
+    z: Math.sin(theta) * radius,
+    // 완벽한 구는 인공적으로 보인다. 거리를 흩는다.
+    shell: 0.55 + Math.random() * 0.45,
+    size: 0.6 + Math.random() * 1.9,
+    twinkle: Math.random() * Math.PI * 2,
+  };
+});
+
+let angle = 0;
+
+function draw(now) {
+  // 목표 상태로 서서히 옮겨간다. 즉시 바꾸면 툭툭 끊긴다.
+  for (const key of Object.keys(mood)) {
+    mood[key] += (target[key] - mood[key]) * 0.05;
+  }
+
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const span = Math.min(width, height) * 0.40;
+
+  context.clearRect(0, 0, width, height);
+  drawHalo(centerX, centerY, span);
+  drawPulses(centerX, centerY, span);
+
+  angle += mood.spin * 0.016;
+
+  // z로 정렬해 뒤에 있는 입자가 먼저 그려지게 한다. 그래야 깊이가 산다.
+  const projected = particles.map((particle) => {
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const x = particle.x * cos - particle.z * sin;
+    const z = particle.x * sin + particle.z * cos;
+    const distance = span * particle.shell * mood.pull;
+    const depth = (z + 1) / 2;                 // 0 뒤 → 1 앞
+    return { screenX: centerX + x * distance, screenY: centerY + particle.y * distance,
+             depth, particle };
+  }).sort((a, b) => a.depth - b.depth);
+
+  for (const point of projected) {
+    const { particle, depth } = point;
+    const flicker = 0.72 + 0.28 * Math.sin(now / 620 + particle.twinkle);
+    const alpha = (0.20 + depth * 0.62) * (0.34 + mood.energy * 0.66) * flicker;
+    const radius = particle.size * (0.55 + depth * 0.85);
+    const light = 62 + depth * 26;
+
+    context.beginPath();
+    context.arc(point.screenX, point.screenY, radius, 0, Math.PI * 2);
+    context.fillStyle = `hsla(${mood.hue}, 92%, ${light}%, ${alpha})`;
+    context.fill();
+  }
+
+  drawCore(centerX, centerY, now);
+  requestAnimationFrame(draw);
+}
+
+function drawHalo(centerX, centerY, span) {
+  const halo = context.createRadialGradient(
+    centerX, centerY, 0, centerX, centerY, span * 1.6
+  );
+  halo.addColorStop(0, `hsla(${mood.hue}, 90%, 52%, ${0.20 * mood.glow})`);
+  halo.addColorStop(0.45, `hsla(${mood.hue}, 88%, 40%, ${0.10 * mood.glow})`);
+  halo.addColorStop(1, 'hsla(215, 80%, 10%, 0)');
+  context.fillStyle = halo;
+  context.fillRect(0, 0, width, height);
+}
+
+function drawCore(centerX, centerY, now) {
+  const beat = 1 + Math.sin(now / (mood.energy > 0.6 ? 420 : 1500)) * 0.13;
+  const radius = CORE_RADIUS * beat * (0.75 + mood.glow * 0.4);
+  const core = context.createRadialGradient(
+    centerX, centerY, 0, centerX, centerY, radius * 4
+  );
+  core.addColorStop(0, 'rgba(255,255,255,0.98)');
+  core.addColorStop(0.22, `hsla(${mood.hue}, 100%, 84%, 0.92)`);
+  core.addColorStop(1, `hsla(${mood.hue}, 100%, 56%, 0)`);
+  context.fillStyle = core;
+  context.beginPath();
+  context.arc(centerX, centerY, radius * 4, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawPulses(centerX, centerY, span) {
+  pulses = pulses.filter((pulse) => pulse.life < 1);
+  for (const pulse of pulses) {
+    pulse.life += 0.012;
+    const radius = span * (0.15 + pulse.life * 1.5);
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    context.strokeStyle = `hsla(${mood.hue}, 95%, 70%, ${(1 - pulse.life) * 0.35})`;
+    context.lineWidth = 2;
+    context.stroke();
+  }
+}
+
+// -- 상태 받아오기 ----------------------------------------------------------
+
+let lastPresence = 'asleep';
+
+async function poll() {
+  try {
+    const response = await fetch('/state', { cache: 'no-store' });
+    const state = await response.json();
+    apply(state.presence, state.text || '');
+  } catch (error) {
+    // 서버가 내려갔다. 잠든 모습으로 계속 돈다.
+    apply('asleep', '');
+  }
+}
+
+function apply(presence, text) {
+  target = MOODS[presence] || MOODS.asleep;
+  statusBox.textContent = presence;
+
+  if (presence === 'speaking' && lastPresence !== 'speaking') {
+    pulses.push({ life: 0 }, { life: -0.18 }, { life: -0.36 });
+  }
+  lastPresence = presence;
+
+  captionBox.textContent = text;
+  captionBox.classList.toggle('on', Boolean(text) && presence !== 'asleep');
+}
+
+resize();
+requestAnimationFrame(draw);
+poll();
+setInterval(poll, 400);
+</script>

@@ -28,9 +28,10 @@ STALE_SECONDS = 90
 
 
 class NullPresence:
-    """아무것도 보여주지 않는다. 기본값.
+    """아무것도 보여주지 않는다.
 
-    화면을 켜지 않은 사람에게 파일을 만들어 주지 않는다.
+    테스트와, 사람이 보고 있지 않은 경로(MCP 서버·launchd)를 위한 것이다.
+    상태를 내보내지 않는 것이 정상인 자리가 분명히 있다.
     """
 
     def show(self, presence: Presence, text: str = "") -> None:

@@ -102,6 +102,7 @@ from junvis.features.voice.application.ports import TextToSpeechPort
 from junvis.features.voice.application.use_cases.handle_utterance import HandleUtterance
 from junvis.features.voice.domain.model import WakeWordConfig
 from junvis.features.voice.infrastructure.intent_judge import LlmIntentJudge
+from junvis.features.voice.infrastructure.presence import STATE_FILENAME, FilePresence
 from junvis.features.voice.infrastructure.tts import default_tts
 
 HOME_ENV = "JUNVIS_HOME"
@@ -169,6 +170,8 @@ class Voice:
     handle: HandleUtterance
     tts: TextToSpeechPort
     config: WakeWordConfig
+    #: 오브(`junvis orb`)가 읽는 상태 파일. 듣기와 화면은 다른 프로세스다.
+    presence_path: Path
 
 
 @dataclass
@@ -257,7 +260,9 @@ def build(
         db, project_repository, content_repository, brand_voice, policy, tracer,
         offline=offline,
     )
-    voice = _build_voice(bus, tracer, resolved_model, projects, creator, brief, tts=tts)
+    voice = _build_voice(
+        bus, tracer, resolved_model, projects, creator, brief, tts=tts, root=root
+    )
     mcp_config = McpConfig(root / CONFIG_FILENAME)
     mcp_host = McpHost(
         ToolCatalog(db), mcp_config.load(), policy=policy, log_dir=root / "logs"
@@ -390,6 +395,7 @@ def _build_voice(
     brief: Brief,
     *,
     tts: TextToSpeechPort | None,
+    root: Path,
 ) -> Voice:
     """라우터가 여러 Context를 안다. feature끼리는 여전히 서로를 모른다."""
     router = VoiceCommandRouter(
@@ -400,12 +406,20 @@ def _build_voice(
     )
     config = WakeWordConfig.with_words(_wake_words())
     resolved_tts = tts or default_tts()
+    presence = FilePresence(root / STATE_FILENAME)
     return Voice(
         handle=HandleUtterance(
-            LlmIntentJudge(model), router, resolved_tts, bus, config=config, tracer=tracer
+            LlmIntentJudge(model),
+            router,
+            resolved_tts,
+            bus,
+            config=config,
+            tracer=tracer,
+            presence=presence,
         ),
         tts=resolved_tts,
         config=config,
+        presence_path=presence.path,
     )
 
 

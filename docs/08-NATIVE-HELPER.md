@@ -122,3 +122,34 @@ junvis listen --native          # 붙여서 확인
 ```
 
 빌드가 깨지면 그건 예상된 일이다. 계약이 고정되어 있으므로 Swift만 고치면 된다.
+
+### SwiftPM을 쓰지 않는 이유
+
+처음에는 `Package.swift`로 `swift build`를 했다. 실제 맥에서 이렇게 죽었다.
+
+```
+error: 'junvis-mac': Invalid manifest
+Undefined symbols for architecture arm64:
+  "PackageDescription.Package.__allocating_init(name:defaultLocalization:…)"
+```
+
+Command Line Tools에 딸려 오는 SwiftPM과 `PackageDescription` 라이브러리의
+버전이 어긋나면 매니페스트를 링크하지 못한다. **Swift 코드와는 아무 상관이
+없는 실패다** — 빌드 시스템이 자기 자신을 빌드하지 못한 것이다.
+
+의존성이 하나도 없는 파일 다섯 개짜리 도구에 패키지 매니저는 얻는 것 없이
+깨질 곳만 늘린다. `swiftc`로 직접 컴파일한다.
+
+```bash
+swiftc -O -o junvis-mac native/junvis-mac/*.swift \
+    -framework AVFoundation -framework Speech -framework EventKit \
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \
+    -Xlinker native/junvis-mac/Info.plist
+```
+
+`Info.plist`를 실행 파일 안에 심는 것이 중요하다. 사용 설명 문자열이 없으면
+macOS는 마이크 권한을 **물어보지도 않고 거부한다.**
+
+같은 이유로 Swift 5.7의 축약 옵셔널 바인딩(`if let value {`)도 쓰지 않는다.
+`if let value = value {`로 풀어 쓰면 옛 툴체인에서도 컴파일된다. 이 한 줄
+차이로 빌드가 갈리는데, 얻는 것은 글자 수뿐이다.

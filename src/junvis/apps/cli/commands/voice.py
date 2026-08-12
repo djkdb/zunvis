@@ -22,7 +22,36 @@ def register(sub) -> dict:
     say = sub.add_parser("say", help="한 문장을 소리내어 읽는다")
     say.add_argument("text")
 
-    return {"listen": cmd_listen, "say": cmd_say}
+    orb = sub.add_parser("orb", help="부르면 반응하는 화면을 띄운다")
+    orb.add_argument("--port", type=int, default=DEFAULT_PORT)
+    orb.add_argument("--no-open", action="store_true", help="브라우저를 열지 않는다")
+
+    return {"listen": cmd_listen, "say": cmd_say, "orb": cmd_orb}
+
+
+def cmd_orb(args, junvis: Junvis) -> int:
+    from junvis.apps.orb.server import HOST, build_server, open_later
+
+    try:
+        server = build_server(junvis.voice.presence_path, args.port)
+    except OSError as exc:
+        print(f"{args.port} 포트를 열지 못했습니다: {exc}", file=sys.stderr)
+        print("  다른 포트로: junvis orb --port 4174", file=sys.stderr)
+        return 1
+
+    url = f"http://{HOST}:{args.port}/"
+    print(f"오브: {url}", file=sys.stderr)
+    print("다른 창에서 `junvis listen` 을 띄우면 반응합니다.", file=sys.stderr)
+    if not args.no_open:
+        open_later(url)
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n닫습니다.", file=sys.stderr)
+    finally:
+        server.server_close()
+    return 0
 
 
 def cmd_say(args, junvis: Junvis) -> int:
