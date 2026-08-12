@@ -43,6 +43,26 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w가-힣\s]", "", text.lower())).strip()
 
 
+class Presence(str, Enum):
+    """JUNVIS가 지금 무엇을 하고 있는가 — 사람에게 보여줄 상태.
+
+    로그가 아니다. 말을 걸었을 때 **들었는지 아닌지 즉시 알 수 있어야**
+    한다는 요구에서 나온 도메인 개념이다. 음성 인터페이스에서 침묵은
+    "무시당했다"와 "생각 중이다"를 구분해 주지 못한다.
+
+    게이트가 이미 이 전이를 전부 알고 있으므로 새로 계산하지 않는다.
+    화면에 어떻게 그릴지는 여기서 정하지 않는다(그건 어댑터의 몫).
+    """
+
+    ASLEEP = "asleep"
+    #: 이름을 들었다. 후속 발화 창이 열려 있다.
+    AWAKE = "awake"
+    #: 명령을 실행하는 중.
+    THINKING = "thinking"
+    #: 답을 말하는 중.
+    SPEAKING = "speaking"
+
+
 class GateDecision(str, Enum):
     ACT = "act"
     IGNORE_EMPTY = "ignore_empty"

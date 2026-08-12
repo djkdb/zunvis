@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from typing import Protocol
 
 from junvis.core.ports import ClockPort, SystemClock
-from junvis.features.voice.domain.model import Utterance
+from junvis.features.voice.domain.model import Presence, Utterance
 
 __all__ = [
     "ClockPort",
@@ -15,6 +15,7 @@ __all__ = [
     "TextToSpeechPort",
     "AudioSourcePort",
     "CommandHandlerPort",
+    "PresencePort",
 ]
 
 
@@ -49,3 +50,14 @@ class CommandHandlerPort(Protocol):
         무엇을 실행할지는 조립 루트의 라우터가 정한다. voice는
         다른 feature를 임포트하지 않는다.
         """
+
+
+class PresencePort(Protocol):
+    """지금 상태를 사람에게 보여준다.
+
+    **보여주기만 한다.** 여기서 무엇을 돌려받지 않으므로 판단에 영향을
+    주지 않고, 화면이 꺼져 있어도 파이프라인은 그대로 돈다. 실패해도
+    예외를 던지지 않는다 — 장식 때문에 명령이 죽으면 안 된다.
+    """
+
+    def show(self, presence: Presence, text: str = "") -> None: ...

@@ -10,6 +10,7 @@ from junvis.core.trace.recorder import TraceRecorder
 from junvis.features.voice.application.ports import (
     CommandHandlerPort,
     IntentJudgePort,
+    PresencePort,
     TextToSpeechPort,
 )
 from junvis.features.voice.domain.events import (
@@ -19,6 +20,7 @@ from junvis.features.voice.domain.events import (
 from junvis.features.voice.domain.model import (
     GateDecision,
     ListenerState,
+    Presence,
     Utterance,
     WakeWordConfig,
     gate,
@@ -55,6 +57,7 @@ class HandleUtterance:
         *,
         config: WakeWordConfig | None = None,
         tracer: TraceRecorder | None = None,
+        presence: PresencePort | None = None,
     ) -> None:
         self._judge = judge
         self._handler = handler
@@ -62,6 +65,7 @@ class HandleUtterance:
         self._bus = bus
         self._config = config or WakeWordConfig()
         self._tracer = tracer
+        self._presence = presence
 
     def __call__(self, utterance: Utterance, state: ListenerState) -> VoiceOutcome:
         decision = gate(utterance, self._config, state)
@@ -98,9 +102,19 @@ class HandleUtterance:
             logger.debug("Intent Judge 실패, 통과시킴: %s", exc)
             return True
 
+    def _show(self, presence: Presence, text: str = "") -> None:
+        """장식이 명령을 죽이지 않게 한다. 화면은 언제든 없을 수 있다."""
+        if self._presence is None:
+            return
+        try:
+            self._presence.show(presence, text)
+        except Exception as exc:  # pragma: no cover - 방어적
+            logger.debug("상태 표시 실패: %s", exc)
+
     def _execute(
         self, utterance: Utterance, command: str, state: ListenerState
     ) -> VoiceOutcome:
+        self._show(Presence.THINKING, command)
         if self._tracer is None:
             answer = self._run(command)
         else:
@@ -119,11 +133,15 @@ class HandleUtterance:
     def _respond(
         self, utterance: Utterance, *, command: str, answer: str, state: ListenerState
     ) -> VoiceOutcome:
+        self._show(Presence.SPEAKING, answer)
         self._tts.speak(answer)
         # 말한 내용을 기억해 에코를 막고, 후속 발화 창을 연다.
         next_state = state.with_spoken(
             answer, utterance.heard_at, self._config.follow_up_window
         )
+        # 말이 끝나도 창이 열려 있다. 화면도 그대로 깨어 있어야 사용자가
+        # 호출어 없이 이어 말해도 된다는 것을 안다.
+        self._show(Presence.AWAKE)
         return VoiceOutcome(GateDecision.ACT, command, answer, next_state)
 
     def _ignore(
@@ -132,4 +150,8 @@ class HandleUtterance:
         self._bus.publish(
             VoiceUtteranceIgnored(text=utterance.text, reason=decision.value)
         )
+        # 창이 열려 있는 동안의 잡음까지 화면을 재우면, 사용자는 아직
+        # 이어 말할 수 있는데도 다시 이름을 부르게 된다.
+        if not state.is_awake(utterance.heard_at):
+            self._show(Presence.ASLEEP)
         return VoiceOutcome(decision, state=state)

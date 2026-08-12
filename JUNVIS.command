@@ -136,34 +136,54 @@ listen_flags() {
 }
 
 menu() {
-    local flags
+    local flags default
     flags="$(listen_flags)"
+    # 헬퍼가 없으면 듣기는 sox·whisper·모델을 요구하다 막힌다. 막다른
+    # 길을 기본으로 두지 않는다 — 빌드가 그 전부를 대신한다.
+    default=1
+    [[ -z "${flags}" ]] && default=6
 
     step "3. 무엇을 할까요"
     if [[ -n "${flags}" ]]; then
         say "  1) 듣기 — 호출어 또는 박수 두 번   ${DIM}(기본)${OFF}"
     else
-        say "  1) 듣기 — 호출어로 시작            ${DIM}(기본)${OFF}"
-        note "   박수 두 번을 쓰려면: ./scripts/build-mac.sh"
+        say "  1) 듣기 — 별도 설치 필요 (6번을 먼저 하시길)"
     fi
     say "  2) 오늘 브리핑"
     say "  3) 상태 점검"
     say "  4) 직접 입력 (마이크 없이 텍스트로)"
     say "  5) 그냥 종료"
-    printf '\n선택 [1]: '
+    if [[ -z "${flags}" ]]; then
+        say "  6) 마이크 켜기 — 맥 내장 음성 인식 빌드   ${DIM}(기본)${OFF}"
+        note "   brew도 모델 내려받기도 필요 없고 박수 두 번까지 됩니다"
+    fi
+    printf '\n선택 [%s]: ' "${default}"
 
     local choice
     read -r choice || choice=5
     echo
 
-    case "${choice:-1}" in
+    case "${choice:-${default}}" in
         1) "${JUNVIS}" listen ${flags} ;;
         2) "${JUNVIS}" brief ;;
         3) "${JUNVIS}" setup ;;
         4) "${JUNVIS}" listen --stdin ;;
         5) return 0 ;;
+        6) build_helper ;;
         *) warn "모르는 선택입니다: ${choice}" ;;
     esac
+}
+
+build_helper() {
+    if ! "${HERE}/scripts/build-mac.sh"; then
+        fail "빌드에 실패했습니다. 위 메시지를 그대로 보내주세요."
+        return 1
+    fi
+    export PATH="${HOME}/.local/bin:${PATH}"
+    say ""
+    say "${BOLD}이제 듣습니다. 이름을 부르거나 박수를 두 번 치세요.${OFF}"
+    say ""
+    "${JUNVIS}" listen --native
 }
 
 clear

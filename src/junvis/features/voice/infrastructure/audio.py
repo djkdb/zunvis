@@ -38,6 +38,21 @@ class AudioUnavailable(JunvisError):
     """녹음이나 인식에 필요한 도구가 없다."""
 
 
+def _easier_path() -> str:
+    """맥에서는 이 길이 더 쉽다. 막힌 사람에게 그 사실을 알려준다.
+
+    네이티브 헬퍼는 macOS 내장 음성 인식을 쓴다 — brew도, 모델 내려받기도
+    필요 없고 상시 대기와 박수까지 된다. 여기서 안내하지 않으면 사용자는
+    굳이 어려운 길로 간다.
+    """
+    if sys.platform != "darwin":
+        return ""
+    return (
+        "\n\n더 쉬운 길: 맥 내장 음성 인식을 쓰면 위의 것들이 필요 없습니다.\n"
+        "  ./scripts/build-mac.sh   그다음  junvis listen --native"
+    )
+
+
 class StdinSource:
     """표준입력 한 줄 = 발화 하나."""
 
@@ -78,13 +93,15 @@ class SoxWhisperSource:
         if missing:
             raise AudioUnavailable(
                 f"필요한 도구가 없습니다: {', '.join(missing)}\n"
-                "  brew install sox whisper-cpp\n"
+                "  brew install sox whisper-cpp"
+                f"{_easier_path()}\n"
                 "또는 `junvis listen --stdin` 으로 텍스트 입력을 쓰세요."
             )
         if not self._model_path or not Path(self._model_path).is_file():
             raise AudioUnavailable(
                 f"Whisper 모델을 찾을 수 없습니다. {WHISPER_MODEL_ENV}를 설정하세요.\n"
                 "  예: export JUNVIS_WHISPER_MODEL=~/models/ggml-base.bin"
+                f"{_easier_path()}"
             )
 
     def listen(self) -> Iterator[Utterance]:
