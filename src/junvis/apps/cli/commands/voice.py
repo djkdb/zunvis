@@ -133,6 +133,13 @@ def cmd_listen(args, junvis: Junvis) -> int:
                 print(f"> {outcome.response}")
             else:
                 print(f"  (무시: {outcome.decision.reason})", file=sys.stderr)
+
+            if outcome.acted:
+                # 방금 JUNVIS가 말했다. 그동안 마이크에 들어온 것은 전부
+                # 자기 목소리다. 소스가 버릴 수 있으면 버린다.
+                discard = getattr(source, "discard_pending", None)
+                if discard is not None:
+                    discard()
             junvis.drain()
     except KeyboardInterrupt:
         print("\n종료합니다.", file=sys.stderr)

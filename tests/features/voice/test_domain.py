@@ -176,3 +176,50 @@ def test_follow_up_window_closes() -> None:
 
 def test_fresh_state_has_no_open_window() -> None:
     assert ListenerState().is_awake(NOW) is False
+
+
+# -- 에코: 실제로 무한 루프를 만든 것들 ---------------------------------------
+
+
+def _echoed(heard: str, spoken: str) -> bool:
+    from junvis.features.voice.domain.model import (
+        DEFAULT_ECHO_THRESHOLD,
+        DEFAULT_ECHO_WINDOW,
+        ListenerState,
+        Utterance,
+    )
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 8, 13, 3, 0, tzinfo=timezone.utc)
+    state = ListenerState().with_spoken(spoken, now, timedelta(seconds=12))
+    return state.sounds_like_echo(
+        Utterance(text=heard, heard_at=now + timedelta(seconds=1)),
+        threshold=DEFAULT_ECHO_THRESHOLD,
+        window=DEFAULT_ECHO_WINDOW,
+    )
+
+
+def test_a_misheard_prefix_of_my_own_answer_is_an_echo() -> None:
+    """이것이 무한 루프를 만들었다. 12일을 11일로 흘려 들었을 뿐이다."""
+    assert _echoed(
+        "8월 11일 브리핑 입니다",
+        "8월 12일 브리핑입니다. 작업 습관, 최근 7일 동안 10번 작업했습니다.",
+    )
+
+
+def test_spacing_differences_do_not_hide_an_echo() -> None:
+    """한국어 STT의 띄어쓰기는 신뢰할 수 없다."""
+    assert _echoed("등록 된 프로젝트가", "등록된 프로젝트가 없습니다.")
+
+
+def test_a_real_command_is_not_an_echo() -> None:
+    """에코를 너무 세게 잡으면 사용자가 말을 못 하게 된다."""
+    assert not _echoed(
+        "릴스 만들어줘",
+        "8월 12일 브리핑입니다. 작업 습관, 최근 7일 동안 10번 작업했습니다.",
+    )
+
+
+def test_repeating_a_command_after_an_answer_still_works() -> None:
+    """같은 명령을 한 번 더 시키는 것은 정당하다."""
+    assert not _echoed("오늘 브리핑", "등록된 프로젝트가 없습니다.")

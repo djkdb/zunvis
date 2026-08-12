@@ -518,3 +518,24 @@ def test_every_use_case_leaves_a_trace(junvis) -> None:
 
     requests = {t.request for t in SqliteTraceStore(junvis.db).recent(50)}
     assert {"content.create", "content.list"} <= requests
+
+
+def test_voice_survives_korean_stt_spacing(talking) -> None:
+    """실제로 이렇게 들렸다: "릴 스 만들어 줘".
+
+    한국어 STT의 띄어쓰기는 신뢰할 수 없다. 라우터가 "릴스"만 찾으면
+    사용자는 또박또박 붙여 말해야 하는데, 그건 사람이 기계에 맞추는 것이다.
+    """
+    outcome = say(talking, "자비스 MCP 서버 릴 스 만들어 줘")
+
+    assert outcome.acted
+    assert "기획을 만들었습니다" in outcome.response
+    # 상투어를 못 걷어내면 "릴 스 만들어 줘"가 주제에 섞여 들어간다.
+    # 조용히 엉뚱한 기획을 만드는 쪽이 못 알아듣는 것보다 나쁘다.
+    assert talking.creator.list_all(status="drafted")[0].subject == "MCP 서버"
+
+
+def test_voice_survives_spacing_in_the_wake_word(talking) -> None:
+    outcome = say(talking, "자비 스 프로젝트 목록")
+
+    assert outcome.acted

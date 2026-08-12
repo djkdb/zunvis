@@ -255,6 +255,26 @@ class AppleSpeechSource:
             raise AudioUnavailable(f"마이크를 열지 못했습니다: {error}")
         self._engine = engine
 
+    def discard_pending(self) -> None:
+        """JUNVIS가 말하는 동안 마이크에 들어온 것을 전부 버린다.
+
+        스피커 소리는 마이크로 돌아온다. 그것을 에코 필터로 뒤쫓는 것은
+        지는 싸움이다 — 받아쓰기가 "8월 12일"을 "8월 11일"로 흘려 들으면
+        필터를 빠져나가고, JUNVIS는 자기 대답을 명령으로 알아듣고 다시
+        실행한다. 실제로 무한 루프가 돌았다.
+
+        말이 끝난 시점은 정확히 안다(`say`는 동기적으로 블로킹한다).
+        그 시점에 인식을 새로 시작하면 에코는 원천적으로 사라진다.
+        """
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
+        self._partial = ""
+        if self._recognizer is not None:
+            self._restart_task()
+
     def stop(self) -> None:
         try:
             if self._engine is not None:

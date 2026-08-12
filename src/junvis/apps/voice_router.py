@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -31,6 +32,17 @@ SPOKEN_PROJECTS = 3
 UNKNOWN_RESPONSE = "아직 그건 못 합니다. 브리핑, 프로젝트, 릴스를 말해보세요."
 
 
+def _squash(text: str) -> str:
+    """띄어쓰기를 지운다.
+
+    한국어 STT가 "릴스"를 "릴 스"로, "브리핑"을 "브리 핑"으로 내놓는다.
+    도메인의 `squash`와 글자는 같지만 하는 일이 다르다 — 저쪽은 에코를
+    판정하고 이쪽은 명령을 고른다. 합치면 한쪽을 고칠 때 다른 쪽이
+    조용히 바뀐다.
+    """
+    return "".join(text.lower().split())
+
+
 @dataclass(frozen=True)
 class Route:
     name: str
@@ -39,8 +51,8 @@ class Route:
     #: 사용자에게 보여줄 말투 그대로의 예시.
     example: str = ""
 
-    def matches(self, command: str) -> bool:
-        return any(keyword in command for keyword in self.keywords)
+    def matches(self, squashed: str) -> bool:
+        return any(_squash(keyword) in squashed for keyword in self.keywords)
 
 
 class VoiceCommandRouter:
@@ -68,9 +80,9 @@ class VoiceCommandRouter:
         return tuple(route.example for route in self._routes)
 
     def handle(self, command: str) -> str:
-        lowered = command.lower()
+        squashed = _squash(command)
         for route in self._routes:
-            if route.matches(lowered):
+            if route.matches(squashed):
                 try:
                     return route.run(command)
                 except JunvisError as exc:
@@ -92,7 +104,8 @@ class VoiceCommandRouter:
     def _projects(self, _command: str) -> str:
         summaries = self._list_projects()
         if not summaries:
-            return "등록된 프로젝트가 없습니다."
+            # 빈손으로 끝내지 않는다. 다음에 뭘 하면 되는지 말해 준다.
+            return "아직 등록된 프로젝트가 없습니다. 터미널에서 junvis add 로 등록하세요."
         names = ", ".join(s.name for s in summaries[:SPOKEN_PROJECTS])
         if len(summaries) > SPOKEN_PROJECTS:
             return f"프로젝트 {len(summaries)}개가 있습니다. 최근 것은 {names}입니다."
@@ -120,8 +133,17 @@ _FILLER = (
 
 
 def _extract_subject(command: str) -> str:
-    """"릴스 하나 만들자" → 빈 문자열, "MCP 릴스 만들어줘" → "MCP"."""
+    """"릴스 하나 만들자" → 빈 문자열, "MCP 릴스 만들어줘" → "MCP".
+
+    상투어도 띄어서 들린다. "릴 스 만들어 줘"에서 걷어내지 못하면 그것이
+    통째로 릴스 **주제**가 된다 — 조용히 엉뚱한 기획을 만드는 쪽이
+    못 알아듣는 것보다 나쁘다.
+    """
     text = command
     for filler in _FILLER:
-        text = text.replace(filler, " ")
+        text = _loose(filler).sub(" ", text)
     return " ".join(text.split()).strip(" ,.!?~")
+
+
+def _loose(token: str) -> re.Pattern[str]:
+    return re.compile(r"\s*".join(re.escape(ch) for ch in token if not ch.isspace()))

@@ -43,6 +43,32 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\w가-힣\s]", "", text.lower())).strip()
 
 
+def loose(token: str) -> re.Pattern[str]:
+    """글자 사이에 공백이 끼어도 찾아내는 패턴.
+
+    `squash`가 비교용이라면 이쪽은 **제거용**이다. 원문에서 호출어를
+    걷어낼 때는 공백을 지운 사본이 아니라 원문 위치를 알아야 한다.
+    "자비 스 프로젝트"에서 "자비 스"를 지워야 명령이 "프로젝트"가 된다.
+    """
+    letters = [re.escape(ch) for ch in token if not ch.isspace()]
+    return re.compile(r"\s*".join(letters), re.IGNORECASE)
+
+
+def squash(text: str) -> str:
+    """띄어쓰기를 지운 비교용 형태.
+
+    **한국어 STT의 띄어쓰기는 신뢰할 수 없다.** 실제로 이렇게 나왔다.
+
+        "릴스 만들어줘"        →  "릴 스 만들어 줘"
+        "등록된 프로젝트가"     →  "등록 된 프로젝트가"
+
+    사람에게는 같은 말이다. 그래서 호출어를 찾을 때도, 에코를 판정할 때도
+    공백을 없앤 것끼리 본다. 라틴 문자는 단어 경계가 의미를 가지므로
+    (`junvis`가 `junvistest`에 걸리면 안 된다) 이 함수를 쓰지 않는다.
+    """
+    return normalize(text).replace(" ", "")
+
+
 class Presence(str, Enum):
     """JUNVIS가 지금 무엇을 하고 있는가 — 사람에게 보여줄 상태.
 
@@ -97,6 +123,10 @@ class Utterance:
         return normalize(self.text)
 
     @property
+    def squashed(self) -> str:
+        return squash(self.text)
+
+    @property
     def is_blank(self) -> bool:
         return not self.normalized
 
@@ -118,14 +148,15 @@ class WakeWordConfig:
 
         "자비스 브리핑"도 "오늘 브리핑 좀, 자비스"도 통과해야 한다.
         """
-        text = utterance.normalized
-        words = set(_LATIN_WORD.findall(text))
+        words = set(_LATIN_WORD.findall(utterance.normalized))
+        squashed = utterance.squashed
         for wake in self.words:
             target = normalize(wake)
             if not target:
                 continue
             if _HANGUL.search(target):
-                if target in text:
+                # "자비 스 프로젝트"도 부른 것이다.
+                if squash(target) in squashed:
                     return True
             elif target in words:
                 return True
@@ -139,7 +170,7 @@ class WakeWordConfig:
         """
         text = utterance.text
         for token in (*self.words, *ADDRESS_PREFIXES):
-            text = re.sub(re.escape(token), " ", text, flags=re.IGNORECASE)
+            text = loose(token).sub(" ", text)
         return re.sub(r"\s+", " ", text).strip(" ,.!?~")
 
 
@@ -151,6 +182,10 @@ class SpokenLine:
     @property
     def normalized(self) -> str:
         return normalize(self.text)
+
+    @property
+    def squashed(self) -> str:
+        return squash(self.text)
 
 
 @dataclass(frozen=True)
@@ -175,19 +210,26 @@ class ListenerState:
     def sounds_like_echo(
         self, utterance: Utterance, *, threshold: float, window: timedelta
     ) -> bool:
-        heard = utterance.normalized
+        heard = utterance.squashed
         if not heard:
             return False
         for line in self.recent_spoken:
             if utterance.heard_at - line.spoken_at > window:
                 continue
-            spoken = line.normalized
+            spoken = line.squashed
             if not spoken:
                 continue
             # 짧은 발화는 유사도가 튀므로 포함 관계도 함께 본다.
             if heard in spoken or spoken in heard:
                 return True
             if SequenceMatcher(None, heard, spoken).ratio() >= threshold:
+                return True
+            # 에코는 대개 앞부분만 잘려 돌아온다. 긴 대답 전체와 비교하면
+            # 유사도가 묻히므로, 들린 길이만큼의 **앞부분**과 견준다.
+            # "8월 12일 브리핑입니다…"를 "8월 11일 브리핑 입니다"로 흘려
+            # 들어도 이쪽에서 잡힌다.
+            prefix = spoken[: len(heard)]
+            if SequenceMatcher(None, heard, prefix).ratio() >= threshold:
                 return True
         return False
 
