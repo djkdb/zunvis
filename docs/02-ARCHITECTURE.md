@@ -404,6 +404,7 @@ class Project:                    # Aggregate Root
 | Voice | [05](05-VOICE.md) | ✅ (오디오 I/O 미검증) |
 | Personal Memory | [06](06-MEMORY.md) | ✅ |
 | MCP Host | [07](07-MCP-HOST.md) | ✅ |
+| 네이티브 헬퍼 (상시 대기·박수) | [08](08-NATIVE-HELPER.md) | ✅ Python 쪽 / ⚠️ Swift 컴파일 미확인 |
 | Vision | — | 미착수 |
 | Coding Agent | — | 미착수 |
 | Plugin Architecture | 이 문서 §4 | 미착수 |
@@ -415,6 +416,8 @@ class Project:                    # Aggregate Root
 
 - `MacSayTts` (`say`), `MacCalendarAdapter` (AppleScript), `notify` (알림 센터)
 - `SoxWhisperSource` (마이크 녹음 + whisper.cpp)
+- `native/junvis-mac/**.swift` — Swift 툴체인이 없어 **컴파일조차 안 해 봤다**.
+  대신 계약(JSON Lines)을 고정하고 가짜 헬퍼로 Python 쪽 전 경로를 테스트했다.
 - `scripts/install-launchd.sh` (문법만 확인)
 
 전부 플랫폼 검사로 비-macOS에서는 조용히 비활성화되며, 해당 파일 상단에

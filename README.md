@@ -106,9 +106,13 @@ $ junvis listen
 
 ```bash
 junvis listen                 # 마이크 (sox + whisper-cli 필요)
+junvis listen --native        # 상시 대기 + 박수 두 번 (junvis-mac 필요)
 junvis listen --stdin         # 텍스트 입력 — 어디서나 동작
 junvis say "안녕하세요"        # TTS 확인
 ```
+
+박수 두 번은 **이름을 부른 것과 똑같이** 다룬다 — "네?" 하고 후속 명령을 기다린다.
+헬퍼 빌드는 [docs/08](docs/08-NATIVE-HELPER.md) 참고.
 
 `--stdin`이 장식이 아닌 이유: 어떤 STT를 쓰든 파이프로 연결하면 JUNVIS가 동작한다.
 

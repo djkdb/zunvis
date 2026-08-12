@@ -92,13 +92,15 @@ JUNVIS가 스피커로 말하면 그 소리가 마이크로 다시 들어온다.
 
 ```bash
 junvis listen                 # 마이크 (sox + whisper-cli 필요)
+junvis listen --native        # 상시 대기 + 박수 두 번 (junvis-mac 필요)
 junvis listen --stdin         # 텍스트 입력 — 어디서나 동작
 junvis say "안녕하세요"        # TTS 확인
 ```
 
 **상시 대기 마이크와 온디바이스 Wake word는 Swift 헬퍼(`junvis-mac`)의 몫이다.**
-아키텍처 문서에 이미 그렇게 잡혀 있고, 그때 `AudioSourcePort` 구현만 교체하면
-1~5번 파이프라인은 그대로 쓴다.
+설계대로 `AudioSourcePort` 구현(`NativeHelperSource`)만 갈아 끼웠고 1~5번
+파이프라인은 한 줄도 안 고쳤다 — 박수 두 번조차 새 도메인 개념이 아니라
+"이름을 부른 발화"로 바꿔 넣어 기존 게이트가 처리한다([08](08-NATIVE-HELPER.md)).
 
 ---
 

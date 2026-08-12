@@ -279,3 +279,34 @@ def test_listen_without_audio_tools_explains_what_is_missing(
     error = capsys.readouterr().err
     assert "brew install" in error or "Whisper 모델" in error
     assert "--stdin" in error or "Whisper 모델" in error
+
+
+def test_listen_native_without_helper_points_at_the_build_script(
+    home: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("JUNVIS_MAC_BIN", "junvis-mac-없음")
+
+    assert cli(home, "listen", "--native") == 1
+    assert "build-mac.sh" in capsys.readouterr().err
+
+
+def test_listen_native_uses_the_configured_wake_words(
+    home: Path, monkeypatch, capsys
+) -> None:
+    """헬퍼와 게이트가 다른 호출어를 들으면 깨워도 무시된다."""
+    from junvis.features.voice.infrastructure import native_source
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(native_source.shutil, "which", lambda _: "/usr/bin/true")
+
+    def record(self):
+        spawned.append(self.command())
+        return iter(())
+
+    monkeypatch.setattr(native_source.NativeHelperSource, "listen", record)
+
+    assert cli(home, "listen", "--native") == 0
+    assert "박수 두 번" in capsys.readouterr().err
+
+    [command] = spawned
+    assert command[command.index("--wake") + 1] == "준비스,자비스,junvis,jarvis"

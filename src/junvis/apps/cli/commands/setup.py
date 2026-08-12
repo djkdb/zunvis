@@ -26,6 +26,10 @@ from junvis.features.voice.infrastructure.audio import (
     WHISPER_MODEL_ENV,
     DEFAULT_WHISPER_BIN,
 )
+from junvis.features.voice.infrastructure.native_source import (
+    DEFAULT_HELPER,
+    HELPER_BIN_ENV,
+)
 
 OK = "✓"
 MISSING = "·"
@@ -125,7 +129,18 @@ def _voice(todos: list[str]) -> None:
 
     if platform.system() == "Darwin":
         print(f"  {OK} 말하기: macOS `say` (설치 불필요)")
+        _native_helper(todos)
     print("     ※ 도구가 없어도 `junvis listen --stdin` 은 동작합니다")
+
+
+def _native_helper(todos: list[str]) -> None:
+    """상시 대기와 박수는 sox/whisper로 안 된다. 네이티브 헬퍼가 있어야 한다."""
+    binary = os.environ.get(HELPER_BIN_ENV) or DEFAULT_HELPER
+    if shutil.which(binary):
+        print(f"  {OK} 네이티브 헬퍼: {binary} — `junvis listen --native`")
+        return
+    print(f"  {MISSING} 네이티브 헬퍼 없음 (상시 대기·박수 두 번)")
+    todos.append("네이티브 헬퍼 빌드: ./scripts/build-mac.sh — 박수 두 번으로 부르려면 필요합니다")
 
 
 def _calendar(todos: list[str]) -> None:
