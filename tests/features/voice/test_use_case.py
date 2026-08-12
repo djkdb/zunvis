@@ -186,3 +186,87 @@ def test_state_is_unchanged_when_ignored(bus) -> None:
     use_case, *_ = build(bus)
     state = ListenerState()
     assert use_case(heard("혼잣말"), state).state is state
+
+
+# -- 상태 표시 ---------------------------------------------------------------
+
+
+class SpyPresence:
+    def __init__(self) -> None:
+        self.shown: list[tuple[str, str]] = []
+
+    def show(self, presence, text: str = "") -> None:
+        self.shown.append((presence.value, text))
+
+    @property
+    def sequence(self) -> list[str]:
+        return [presence for presence, _ in self.shown]
+
+
+def with_presence(bus, **kwargs):
+    presence = SpyPresence()
+    use_case = HandleUtterance(
+        kwargs.pop("judge", None) or FakeJudge(),
+        kwargs.pop("handler", None) or FakeHandler(),
+        NullTts(),
+        bus,
+        config=WakeWordConfig(),
+        presence=presence,
+    )
+    return use_case, presence
+
+
+def test_a_command_walks_through_thinking_then_speaking(bus) -> None:
+    use_case, presence = with_presence(bus)
+
+    use_case(heard("자비스 브리핑"), ListenerState())
+
+    assert presence.sequence == ["thinking", "speaking", "awake"]
+
+
+def test_calling_the_name_alone_only_answers(bus) -> None:
+    """부름은 실행이 아니다. 생각하는 척하면 안 된다."""
+    use_case, presence = with_presence(bus)
+
+    use_case(heard("자비스"), ListenerState())
+
+    assert presence.sequence == ["speaking", "awake"]
+    assert presence.shown[0] == ("speaking", "네?")
+
+
+def test_noise_puts_the_screen_back_to_sleep(bus) -> None:
+    use_case, presence = with_presence(bus)
+
+    use_case(heard("점심 뭐 먹지"), ListenerState())
+
+    assert presence.sequence == ["asleep"]
+
+
+def test_noise_inside_the_follow_up_window_keeps_the_screen_awake(bus) -> None:
+    """아직 이어 말할 수 있는데 화면이 잠들면 사용자는 다시 이름을 부른다."""
+    use_case, presence = with_presence(bus)
+    open_window = ListenerState().with_spoken("네?", NOW, timedelta(seconds=12))
+
+    # 에코로 걸리는 발화. 창은 아직 열려 있다.
+    use_case(heard("네?", NOW + timedelta(seconds=1)), open_window)
+
+    assert presence.sequence == []
+
+
+def test_a_broken_screen_does_not_break_the_command(bus) -> None:
+    """장식이 본체를 붙잡으면 안 된다."""
+
+    class BrokenPresence:
+        def show(self, presence, text: str = "") -> None:
+            raise RuntimeError("화면이 죽었다")
+
+    handler = FakeHandler("네, 했습니다")
+    use_case = HandleUtterance(
+        FakeJudge(), handler, NullTts(), bus,
+        config=WakeWordConfig(), presence=BrokenPresence(),
+    )
+
+    outcome = use_case(heard("자비스 브리핑"), ListenerState())
+
+    assert outcome.acted
+    assert handler.commands == ["브리핑"]

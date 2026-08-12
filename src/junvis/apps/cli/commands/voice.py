@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from junvis.apps.container import Junvis
+from junvis.apps.orb.server import DEFAULT_PORT
 
 
 def register(sub) -> dict:

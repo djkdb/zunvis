@@ -143,8 +143,15 @@ $ junvis listen
 junvis listen                 # 마이크 (sox + whisper-cli 필요)
 junvis listen --native        # 상시 대기 + 박수 두 번 (junvis-mac 필요)
 junvis listen --stdin         # 텍스트 입력 — 어디서나 동작
+junvis orb                    # 부르면 반응하는 화면
 junvis say "안녕하세요"        # TTS 확인
 ```
+
+`junvis orb`는 다른 창에서 띄운다. 이름을 부르면 밝아지고, 생각할 때 회전이
+빨라지고, 답할 때 파동이 퍼진다. 음성에서 침묵은 "못 들었다"와 "생각 중이다"를
+구분해 주지 못하는데, 화면 하나가 그 문제를 없앤다([docs/09](docs/09-ORB.md)).
+
+**오브는 아무것도 결정하지 않는다.** 꺼도, 죽어도 명령은 그대로 실행된다.
 
 박수 두 번은 **이름을 부른 것과 똑같이** 다룬다 — "네?" 하고 후속 명령을 기다린다.
 헬퍼 빌드는 [docs/08](docs/08-NATIVE-HELPER.md) 참고.

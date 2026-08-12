@@ -149,6 +149,7 @@ menu() {
     else
         say "  1) 듣기 — 별도 설치 필요 (6번을 먼저 하시길)"
     fi
+    note "   부르면 반응하는 화면(오브)이 함께 뜹니다"
     say "  2) 오늘 브리핑"
     say "  3) 상태 점검"
     say "  4) 직접 입력 (마이크 없이 텍스트로)"
@@ -164,7 +165,7 @@ menu() {
     echo
 
     case "${choice:-${default}}" in
-        1) "${JUNVIS}" listen ${flags} ;;
+        1) listen_with_orb "${flags}" ;;
         2) "${JUNVIS}" brief ;;
         3) "${JUNVIS}" setup ;;
         4) "${JUNVIS}" listen --stdin ;;
@@ -172,6 +173,17 @@ menu() {
         6) build_helper ;;
         *) warn "모르는 선택입니다: ${choice}" ;;
     esac
+}
+
+listen_with_orb() {
+    # 오브는 뒤에서 돌고 듣기가 앞에 있는다. 듣기를 끝내면 오브도 함께
+    # 내려간다 — 화면만 남아 빈 껍데기로 빛나고 있으면 안 된다.
+    "${JUNVIS}" orb >/dev/null 2>&1 &
+    local orb_pid=$!
+    trap 'kill "${orb_pid}" 2>/dev/null || true' EXIT
+    "${JUNVIS}" listen $1
+    kill "${orb_pid}" 2>/dev/null || true
+    trap - EXIT
 }
 
 build_helper() {
@@ -183,7 +195,7 @@ build_helper() {
     say ""
     say "${BOLD}이제 듣습니다. 이름을 부르거나 박수를 두 번 치세요.${OFF}"
     say ""
-    "${JUNVIS}" listen --native
+    listen_with_orb "--native"
 }
 
 clear

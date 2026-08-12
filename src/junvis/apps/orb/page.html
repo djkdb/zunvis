@@ -51,7 +51,9 @@ const MOODS = {
   speaking: { hue: 186, energy: 1.00, spin: 0.090, glow: 1.15, pull: 1.06 },
 };
 
-let mood = MOODS.asleep;
+// 복사본이어야 한다. 프리셋을 그대로 가리키면 보간이 프리셋을 덮어쓰고,
+// 그 뒤로는 어떤 상태로 가도 원래 값으로 돌아오지 못한다.
+let mood = { ...MOODS.asleep };
 let target = MOODS.asleep;
 let width = 0, height = 0, scale = 1;
 let pulses = [];   // speaking일 때 퍼져 나가는 파동
@@ -114,9 +116,9 @@ function draw(now) {
   for (const point of projected) {
     const { particle, depth } = point;
     const flicker = 0.72 + 0.28 * Math.sin(now / 620 + particle.twinkle);
-    const alpha = (0.20 + depth * 0.62) * (0.34 + mood.energy * 0.66) * flicker;
+    const alpha = (0.30 + depth * 0.70) * (0.34 + mood.energy * 0.66) * flicker;
     const radius = particle.size * (0.55 + depth * 0.85);
-    const light = 62 + depth * 26;
+    const light = 56 + depth * 30;   // 앞쪽일수록 밝게. 100%로 가면 색이 빠진다
 
     context.beginPath();
     context.arc(point.screenX, point.screenY, radius, 0, Math.PI * 2);
@@ -125,15 +127,25 @@ function draw(now) {
   }
 
   drawCore(centerX, centerY, now);
-  requestAnimationFrame(draw);
+}
+
+function frame(now) {
+  // 장식 한 조각이 실패해도 화면은 계속 돌아야 한다. 예외가 여기서
+  // 새어 나가면 requestAnimationFrame이 다시 걸리지 않아 영영 멈춘다.
+  try {
+    draw(now);
+  } catch (error) {
+    console.error(error);
+  }
+  requestAnimationFrame(frame);
 }
 
 function drawHalo(centerX, centerY, span) {
   const halo = context.createRadialGradient(
-    centerX, centerY, 0, centerX, centerY, span * 1.6
+    centerX, centerY, 0, centerX, centerY, span * 1.3
   );
-  halo.addColorStop(0, `hsla(${mood.hue}, 90%, 52%, ${0.20 * mood.glow})`);
-  halo.addColorStop(0.45, `hsla(${mood.hue}, 88%, 40%, ${0.10 * mood.glow})`);
+  halo.addColorStop(0, `hsla(${mood.hue}, 92%, 54%, ${0.34 * mood.glow})`);
+  halo.addColorStop(0.45, `hsla(${mood.hue}, 90%, 44%, ${0.17 * mood.glow})`);
   halo.addColorStop(1, 'hsla(215, 80%, 10%, 0)');
   context.fillStyle = halo;
   context.fillRect(0, 0, width, height);
@@ -158,6 +170,10 @@ function drawPulses(centerX, centerY, span) {
   pulses = pulses.filter((pulse) => pulse.life < 1);
   for (const pulse of pulses) {
     pulse.life += 0.012;
+    // 음수 life는 "아직 출발 전"이라는 뜻이다. 파동 셋을 시차를 두고
+    // 내보내려고 그렇게 넣었는데, 그대로 반지름으로 쓰면 arc()가 예외를
+    // 던지고 프레임 루프가 통째로 멈춘다.
+    if (pulse.life <= 0) continue;
     const radius = span * (0.15 + pulse.life * 1.5);
     context.beginPath();
     context.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -196,7 +212,7 @@ function apply(presence, text) {
 }
 
 resize();
-requestAnimationFrame(draw);
+requestAnimationFrame(frame);
 poll();
 setInterval(poll, 400);
 </script>

@@ -405,6 +405,7 @@ class Project:                    # Aggregate Root
 | Personal Memory | [06](06-MEMORY.md) | ✅ |
 | MCP Host | [07](07-MCP-HOST.md) | ✅ |
 | 네이티브 헬퍼 (상시 대기·박수) | [08](08-NATIVE-HELPER.md) | ✅ Python 쪽 / ⚠️ Swift 컴파일 미확인 |
+| 오브 (부르면 반응하는 화면) | [09](09-ORB.md) | ✅ |
 | Vision | — | 미착수 |
 | Coding Agent | — | 미착수 |
 | Plugin Architecture | 이 문서 §4 | 미착수 |

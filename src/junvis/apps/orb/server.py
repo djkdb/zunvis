@@ -36,6 +36,10 @@ class OrbHandler(BaseHTTPRequestHandler):
             self._json(read_presence(self.presence_path))
         elif self.path in ("/", "/index.html"):
             self._html(PAGE.read_bytes())
+        elif self.path == "/favicon.ico":
+            # 브라우저가 알아서 물어본다. 404를 콘솔에 남기지 않는다.
+            self.send_response(204)
+            self.end_headers()
         else:
             self.send_error(404)
 
