@@ -6,6 +6,7 @@ import json
 import sys
 
 from junvis.apps.container import Junvis
+from junvis.core.domain.errors import JunvisError
 from junvis.core.mcp.config import CONFIG_FILENAME, McpConfig, ServerSpec
 
 
@@ -65,16 +66,27 @@ def _list(_args, junvis: Junvis, config: McpConfig) -> int:
 
 
 def _add(args, junvis: Junvis, config: McpConfig) -> int:
+    """실제로 붙어 본 뒤에 저장한다.
+
+    먼저 저장하면 깨진 서버가 설정에 남아, 이후 모든 실행이 그것을 안고 간다.
+    """
     spec = ServerSpec(
         id=args.id,
         command=args.executable,
         args=tuple(args.server_args),
         trusted=args.trusted,
     )
-    config.add(spec)
     junvis.mcp.register(spec)
-    print(f"등록했습니다: {spec.id}")
-    print(f"도구 {len(junvis.mcp.discover(spec.id))}개를 찾았습니다.")
+    try:
+        count = len(junvis.mcp.discover(spec.id))
+    except JunvisError as exc:
+        junvis.mcp.unregister(spec.id)
+        print(f"오류: {exc}", file=sys.stderr)
+        print("등록하지 않았습니다.", file=sys.stderr)
+        return 1
+
+    config.add(spec)
+    print(f"등록했습니다: {spec.id} (도구 {count}개)")
     return 0
 
 

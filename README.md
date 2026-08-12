@@ -188,11 +188,47 @@ junvis mcp list
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
-## 설치
+## 첫 실행 (macOS)
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
+source .venv/bin/activate
+
+junvis setup                 # 무엇이 되고 무엇이 없는지, 뭘 치면 되는지
+junvis setup --claude-code   # .mcp.json에 JUNVIS 등록
+junvis add .                 # 이 프로젝트부터 기억시키기
+junvis brief
 ```
+
+`junvis setup`은 **아무것도 바꾸지 않는다**(`--claude-code`로 등록할 때만 예외). 점검이 무언가를 고치기 시작하면 점검을 믿을 수 없게 된다.
+
+```
+$ junvis setup
+코어
+  ✓ Python 3.13.1
+  ✓ macOS 15.3
+
+로컬 모델 (릴스 생성·음성 판정에 필요)
+  · Ollama에 연결할 수 없습니다
+
+할 일:
+  1. Ollama 설치 후 실행: brew install ollama && ollama serve
+  2. 음성 입력 도구 설치: brew install sox whisper-cpp
+  ...
+지금 안 해도 나머지 기능은 동작합니다.
+```
+
+Ollama 없이도 Project Brain · Daily Brief · Personal Memory · MCP Host는 전부 동작한다. 릴스 생성과 음성 판정만 모델이 필요하다.
+
+### 선택 사항
+
+| 환경변수 | 기본 | 뜻 |
+|---|---|---|
+| `JUNVIS_CALENDAR` | 꺼짐 | 브리핑에 오늘 일정 포함. AppleScript라 느리고 권한이 필요해 기본은 꺼져 있다 |
+| `JUNVIS_MODEL_FAST` / `_DEEP` | `llama3.2:3b` / `qwen2.5:14b` | 쓸 Ollama 모델 |
+| `JUNVIS_WHISPER_MODEL` | — | `junvis listen`의 whisper.cpp 모델 경로 |
+| `JUNVIS_WAKE_WORDS` | `자비스,junvis,jarvis` | 호출어 |
+| `JUNVIS_LOG_LEVEL` | 조용함 | 진단이 필요할 때 `DEBUG` |
 
 Python 3.11+ 필요. macOS 우선 설계이며 Windows 기능은 구현하지 않는다.
 

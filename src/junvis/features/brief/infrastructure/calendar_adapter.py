@@ -3,15 +3,21 @@
 Google Calendar API를 쓰지 않는 이유: Calendar.app이 이미 구독 캘린더를
 전부 들고 있고, OAuth 토큰을 하나 더 관리할 이유가 없다.
 
-알려진 한계: AppleScript로 Calendar.app에 묻는 것은 느리다(수 초). 그래서
-짧은 타임아웃을 두고, 실패하면 조용히 빈 목록을 돌려준다. 제대로 된 해법은
-아키텍처 문서의 Swift 헬퍼(`junvis-mac`)에서 EventKit을 쓰는 것이며,
-그때 이 어댑터를 교체한다.
+**기본값은 꺼짐이다.** `JUNVIS_CALENDAR=1`로 켠다. 이유:
+
+1. AppleScript로 Calendar.app에 묻는 것은 느리다(수 초).
+2. 첫 실행에서 권한 대화상자가 뜬다. launchd가 매일 아침 백그라운드로
+   브리핑을 돌리는데, 거기서 대화상자를 기다리며 멈추면 브리핑이 통째로
+   늦어진다.
+
+켜지 않아도 나머지 섹션은 전부 나온다. 제대로 된 해법은 아키텍처 문서의
+Swift 헬퍼(`junvis-mac`)에서 EventKit을 쓰는 것이며, 그때 이 어댑터를 교체한다.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import subprocess
 from datetime import datetime, timedelta
@@ -23,6 +29,13 @@ logger = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 10
 FIELD_SEP = "\x1f"
 RECORD_SEP = "\x1e"
+
+#: 캘린더 조회를 켜는 환경변수. 기본은 꺼짐.
+ENABLE_ENV = "JUNVIS_CALENDAR"
+
+
+def calendar_enabled() -> bool:
+    return os.environ.get(ENABLE_ENV, "").strip() not in {"", "0", "false", "no"}
 
 #: Calendar.app에 오늘 0시~24시 사이에 시작하는 이벤트만 묻는다.
 _SCRIPT = f"""
@@ -48,7 +61,7 @@ class MacCalendarAdapter:
         self._timeout = timeout
 
     def today(self, now: datetime) -> tuple[CalendarEvent, ...]:
-        if platform.system() != "Darwin":
+        if platform.system() != "Darwin" or not calendar_enabled():
             return ()
         output = self._run()
         return self.parse(output, now) if output else ()
