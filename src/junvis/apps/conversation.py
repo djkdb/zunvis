@@ -41,11 +41,9 @@ HISTORY_TURNS = 6
 MAX_PROJECTS = 8
 MEMORY_BUDGET = 600
 
-#: 모델이 죽었을 때. 조용히 실패하지 않고 무엇이 문제인지 말한다.
-OFFLINE_ANSWER = (
-    "지금은 대화를 못 합니다. 로컬 모델이 꺼져 있는 것 같습니다. "
-    "터미널에서 ollama serve 를 실행해 주세요."
-)
+#: 두뇌가 죽었을 때. 조용히 실패하지 않고 무엇이 문제인지 말한다.
+#: 무엇을 쓰고 있는지 모르면서 "ollama serve 하세요"라고 하면 틀린 안내다.
+OFFLINE_ANSWER = "지금은 대화를 못 합니다. 터미널에서 junvis setup 을 실행해 보세요."
 
 SYSTEM = """너는 JUNVIS, ZUN의 개인 AI 비서다.
 
@@ -58,6 +56,8 @@ Claude Code, MCP, 개발 생산성, 새 웹앱, 개발 브이로그, 프로젝�
 - **말로 듣는 답이다.** 두세 문장으로 짧게. 목록이나 마크다운을 쓰지 않는다.
 - 아래 '아는 것'에 없는 사실을 지어내지 않는다. 모르면 모른다고 한다.
 - 조언은 ZUN의 장기 목표(개발, 프로젝트, ZUN 브랜드 성장)를 기준으로 고른다.
+- ZUN이 원하는 것을 네가 바로 실행할 수 있는 말이 아래에 있으면, 그 말을
+  그대로 알려준다. 예: "그건 '오늘 브리핑'이라고 하시면 바로 됩니다."
 """
 
 
@@ -75,12 +75,14 @@ class Conversation:
         list_projects=None,
         digest=None,
         get_brand_voice=None,
+        commands: tuple[str, ...] = (),
         history_turns: int = HISTORY_TURNS,
     ) -> None:
         self._model = model
         self._list_projects = list_projects
         self._digest = digest
         self._get_brand_voice = get_brand_voice
+        self._commands = commands
         self._history: deque[Turn] = deque(maxlen=history_turns)
 
     def __call__(self, question: str) -> str:
@@ -94,14 +96,15 @@ class Conversation:
             response = self._model.complete(
                 ModelRequest(
                     prompt=self._prompt(question),
-                    system=SYSTEM,
+                    system=self._system(),
                     role=ModelRole.FAST,  # 말이 끊기면 대화가 아니다
                     temperature=0.6,
                 )
             )
         except ModelError as exc:
+            # 왜 안 되는지는 어댑터가 안다. 그 말을 그대로 전한다.
             logger.debug("대화 실패: %s", exc)
-            return OFFLINE_ANSWER
+            return f"{OFFLINE_ANSWER}\n  ({exc})"
 
         text = _spoken(response.text)
         if not text:
@@ -113,6 +116,12 @@ class Conversation:
         self._history.clear()
 
     # -- 프롬프트 ------------------------------------------------------------
+
+    def _system(self) -> str:
+        if not self._commands:
+            return SYSTEM
+        listed = ", ".join(f'"{command}"' for command in self._commands)
+        return f"{SYSTEM}\n네가 바로 실행할 수 있는 말: {listed}\n"
 
     def _prompt(self, question: str) -> str:
         parts = []

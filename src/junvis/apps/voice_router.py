@@ -35,6 +35,37 @@ SPOKEN_PROJECTS = 3
 UNKNOWN_RESPONSE = "아직 그건 못 합니다. 브리핑, 프로젝트, 릴스를 말해보세요."
 
 
+#: 판단을 구하는 말. 여기 걸리면 실행이 아니라 의견을 원하는 것이다.
+#:
+#: **좁게 유지한다.** "뭐"·"어디" 같은 넓은 의문사를 넣었더니 "프로젝트 뭐
+#: 있어"까지 대화로 새어 나갔다 — 그건 명백히 목록 요청이다. 규칙이 잡을
+#: 수 있는 것은 규칙이 잡아야 한다.
+_ASKING_FOR_JUDGEMENT = (
+    "좋을까", "좋을까요", "괜찮을까", "나을까", "될까", "할까", "어떨까",
+    "어떻게", "어떡", "왜", "추천", "고민", "생각해", "어때",
+)
+
+#: 시키는 말. 이게 있으면 판단을 구하는 말이 섞여도 명령이다.
+_TELLING = ("줘", "해줘", "하자", "보여", "만들어", "띄워", "실행", "시작")
+
+
+def _is_asking_for_judgement(text: str) -> bool:
+    """실행을 원하는가, 의견을 원하는가.
+
+    "릴스 만들어줘"와 "릴스 소재로 뭐가 제일 좋을까"는 둘 다 "릴스"를 담고
+    있다. 키워드만 보면 후자도 릴스를 만들어 버린다 — 실제로 그랬다.
+    질문에 엉뚱한 실행으로 답하는 것은 못 알아듣는 것보다 나쁘다.
+
+    규칙으로 완벽히 가릴 수는 없다. 그래서 좁게 잡고, 애매하면 규칙을 믿는다.
+    대화가 "그건 '오늘 브리핑'이라고 하시면 됩니다"라고 안내할 수 있으므로
+    반대로 새어 나가도 사용자는 길을 잃지 않는다.
+    """
+    squashed = _squash(text)
+    if any(sign in squashed for sign in _TELLING):
+        return False
+    return any(sign in squashed for sign in _ASKING_FOR_JUDGEMENT)
+
+
 def _squash(text: str) -> str:
     """띄어쓰기를 지운다.
 
@@ -80,14 +111,24 @@ class VoiceCommandRouter:
             Route("projects", ("프로젝트", "project"), self._projects, "프로젝트 목록"),
         )
 
+    def set_conversation(self, converse: Callable[[str], str]) -> None:
+        """대화를 나중에 이어 준다.
+
+        라우터는 대화를 알아야 하고 대화는 라우터의 명령 목록을 알아야 한다.
+        순환처럼 보이지만 각자 한 방향씩만 필요하므로, 조립 루트가 둘을
+        만든 뒤에 이어 주면 된다. 생성자에 서로를 넣으려 하면 막힌다.
+        """
+        self._converse = converse
+
     def examples(self) -> tuple[str, ...]:
         """규칙에서 직접 뽑는다. 안내와 실제가 어긋날 수 없다."""
         return tuple(route.example for route in self._routes)
 
     def handle(self, command: str) -> str:
         squashed = _squash(command)
+        asking = self._converse is not None and _is_asking_for_judgement(command)
         for route in self._routes:
-            if route.matches(squashed):
+            if not asking and route.matches(squashed):
                 try:
                     return route.run(command)
                 except JunvisError as exc:

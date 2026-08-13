@@ -107,8 +107,9 @@ def test_a_dead_model_says_so(model) -> None:
 
     answer = Conversation(model).answer("안녕")
 
-    assert answer == OFFLINE_ANSWER
-    assert "ollama serve" in answer
+    assert OFFLINE_ANSWER in answer
+    # 왜 안 되는지는 어댑터가 안다. 그 말이 사라지면 사용자는 헤맨다.
+    assert "연결 거부" in answer
 
 
 def test_markdown_is_stripped_for_speech(model) -> None:

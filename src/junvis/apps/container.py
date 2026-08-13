@@ -29,6 +29,7 @@ from junvis.core.eventbus.outbox import SqliteOutbox
 from junvis.core.mcp.catalog import ToolCatalog
 from junvis.core.mcp.config import CONFIG_FILENAME, McpConfig
 from junvis.core.mcp.host import McpHost
+from junvis.core.model.claude_code import ClaudeCodeAdapter
 from junvis.core.model.ollama import OllamaAdapter
 from junvis.core.model.ports import ModelPort
 from junvis.core.persistence import CORE_MIGRATIONS, Database
@@ -255,7 +256,10 @@ def build(
 
     memory_repository = SqliteMemoryRepository(db)
 
-    resolved_model = model or OllamaAdapter()
+    resolved_model = model or _default_model()
+    # 주입된 모델은 그대로 쓴다. 테스트가 넣은 것을 조립 루트가 몰래
+    # 갈아 끼우면 무엇을 검증한 것인지 알 수 없게 된다.
+    chat_model = resolved_model if model is not None else _conversation_brain(resolved_model)
     memory = _build_memory(memory_repository, bus, policy, tracer, unit_of_work)
     projects = _build_project_brain(
         project_repository, bus, policy, tracer, unit_of_work, offline=offline
@@ -270,7 +274,7 @@ def build(
     )
     voice = _build_voice(
         bus, tracer, resolved_model, projects, creator, brief, memory,
-        tts=tts, root=root,
+        tts=tts, root=root, chat_model=chat_model,
     )
     mcp_config = McpConfig(root / CONFIG_FILENAME)
     mcp_host = McpHost(
@@ -395,6 +399,45 @@ def _build_brief(
     )
 
 
+#: 무엇을 두뇌로 쓸지. "claude" · "ollama" · 비우면 알아서 고른다.
+BRAIN_ENV = "JUNVIS_BRAIN"
+
+
+def _conversation_brain(shared: ModelPort) -> ModelPort:
+    """대화만은 Claude에게 맡길 수 있다.
+
+    게이트 4(Intent Judge)는 **발화마다** 돈다. 거기에 Claude를 부르면 말
+    한마디마다 몇 초씩 기다리고 토큰도 태운다. 그 판정은 작은 모델로 충분하다.
+
+    대화는 반대다. 품질이 곧 값어치이고, 한 번 부르는 데 몇 초는 괜찮다.
+    그래서 공유 모델이 Claude가 아니더라도 대화만 따로 올려 준다.
+    """
+    if isinstance(shared, ClaudeCodeAdapter):
+        return shared
+    if os.environ.get(BRAIN_ENV, "").strip().lower() == "ollama":
+        return shared
+
+    claude = ClaudeCodeAdapter()
+    return claude if claude.is_available() else shared
+
+
+def _default_model() -> ModelPort:
+    """있는 것 중 좋은 것을 고른다.
+
+    Claude Code CLI가 깔려 있으면 그것을 쓴다 — 이미 로그인돼 있고, 로컬
+    소형 모델과 답변 품질이 비교되지 않으며, Ollama를 따로 띄울 필요가 없다.
+    없으면 Ollama로 내려간다.
+    """
+    choice = os.environ.get(BRAIN_ENV, "").strip().lower()
+    if choice == "ollama":
+        return OllamaAdapter()
+    if choice == "claude":
+        return ClaudeCodeAdapter()
+
+    claude = ClaudeCodeAdapter()
+    return claude if claude.is_available() else OllamaAdapter()
+
+
 def _build_voice(
     bus,
     tracer,
@@ -406,21 +449,25 @@ def _build_voice(
     *,
     tts: TextToSpeechPort | None,
     root: Path,
+    chat_model: ModelPort,
 ) -> Voice:
     """라우터가 여러 Context를 안다. feature끼리는 여전히 서로를 모른다."""
-    conversation = Conversation(
-        model,
-        list_projects=projects.list_all,
-        digest=memory.digest,
-        get_brand_voice=creator.get_brand_voice,
-    )
     router = VoiceCommandRouter(
         compose_brief=brief.compose,
         list_projects=projects.list_all,
         list_content=creator.list_all,
         generate_content=creator.generate,
-        converse=conversation,
     )
+    conversation = Conversation(
+        chat_model,
+        list_projects=projects.list_all,
+        digest=memory.digest,
+        get_brand_voice=creator.get_brand_voice,
+        commands=router.examples(),
+    )
+    # 라우터가 대화를 알아야 하고 대화가 라우터의 명령을 알아야 한다.
+    # 순환이 아니라 한 방향씩이므로 만든 뒤에 이어 준다.
+    router.set_conversation(conversation)
     config = WakeWordConfig.with_words(_wake_words())
     resolved_tts = tts or default_tts()
     presence = FilePresence(root / STATE_FILENAME)

@@ -35,7 +35,7 @@ def test_setup_reports_every_area(home: Path, capsys, monkeypatch) -> None:
     assert cli(home, "setup") == 0
 
     output = capsys.readouterr().out
-    for area in ["코어", "로컬 모델", "음성", "캘린더", "Claude Code"]:
+    for area in ["코어", "두뇌", "음성", "캘린더", "Claude Code"]:
         assert area in output
 
 

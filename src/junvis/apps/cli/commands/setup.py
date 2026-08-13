@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from junvis.apps.container import Junvis
+from junvis.core.model.claude_code import ClaudeCodeAdapter
 from junvis.features.brief.infrastructure.calendar_adapter import (
     ENABLE_ENV,
     calendar_enabled,
@@ -91,10 +92,25 @@ def _core(junvis: Junvis) -> None:
 
 
 def _model(junvis: Junvis, todos: list[str]) -> None:
-    print("\n로컬 모델 (릴스 생성·음성 판정에 필요)")
+    print("\n두뇌 (대화·릴스 생성·음성 판정)")
+
+    if isinstance(junvis.model, ClaudeCodeAdapter):
+        print(f"  {OK} Claude Code CLI — 이미 로그인돼 있어 따로 설치할 것이 없습니다")
+        return
+
+    claude = ClaudeCodeAdapter()
+    if claude.is_available():
+        print(f"  {OK} 대화는 Claude Code CLI가 맡습니다")
+    else:
+        print(f"  {MISSING} Claude Code CLI 없음 — 대화 품질이 가장 좋은 선택지입니다")
+        todos.append(
+            "Claude Code 설치: https://claude.com/claude-code"
+            " — 대화에 Ollama보다 낫고 따로 모델을 받을 필요가 없습니다"
+        )
+
     available = getattr(junvis.model, "is_available", None)
     if available is None or not available():
-        print(f"  {MISSING} Ollama에 연결할 수 없습니다")
+        print(f"  {MISSING} Ollama에 연결할 수 없습니다 (음성 판정용)")
         todos.append("Ollama 설치 후 실행: brew install ollama && ollama serve")
         return
 

@@ -566,3 +566,28 @@ def test_voice_survives_spacing_in_the_wake_word(talking) -> None:
     outcome = say(talking, "자비 스 프로젝트 목록")
 
     assert outcome.acted
+
+
+# -- 실행인가 질문인가 --------------------------------------------------------
+
+
+def test_asking_for_an_opinion_does_not_execute(talking) -> None:
+    """실제로 겪은 것: "릴스 소재로 뭐가 좋을까"가 릴스를 만들어 버렸다.
+
+    질문에 엉뚱한 실행으로 답하는 것은 못 알아듣는 것보다 나쁘다.
+    """
+    outcome = say(talking, "자비스 내 프로젝트 중에 릴스 소재로 뭐가 제일 좋을까")
+
+    assert outcome.response == "그건 이렇게 생각합니다."
+    assert talking.creator.list_all(status="drafted") == []
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["프로젝트 뭐 있어", "프로젝트 목록", "오늘 브리핑", "릴스 만들어줘"],
+)
+def test_plain_commands_still_run(talking, said: str) -> None:
+    """규칙이 잡을 수 있는 것은 규칙이 잡아야 한다."""
+    outcome = say(talking, f"자비스 {said}")
+
+    assert outcome.response != "그건 이렇게 생각합니다."
