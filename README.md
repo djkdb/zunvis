@@ -44,7 +44,8 @@ JUNVIS  /Users/zun/dev/zunvis
 ### 1. Project Brain — 프로젝트를 기억한다
 
 ```bash
-junvis scan ~/dev                                # git 저장소를 한 번에 전부 등록
+junvis scan --github                             # GitHub 프로필 전체 (비공개 포함)
+junvis scan ~/dev                                # 디스크의 git 저장소 전부
 junvis add ~/dev/zunvis --purpose "개인 AI OS"   # 하나만 등록 + git·README 자동 수집
 junvis list                                      # 기억하고 있는 프로젝트
 junvis context zunvis                            # Context Pack 출력
@@ -52,6 +53,17 @@ junvis search "AI 웹앱"                          # 전문 검색(FTS5)
 junvis remember zunvis "Ollama를 기본으로 쓴다"   # 사실 주입
 junvis doctor                                    # 상태 점검
 ```
+
+`--github`는 **맥에 클론하지 않은 것까지** 가져온다. 다른 컴퓨터에서 만든 것, 예전에 지운 것도 프로필에는 남아 있고, 그것들도 "그때 그거 어떻게 됐지"의 대상이다.
+
+```bash
+junvis scan --github            # 내 계정 (gh 로그인 또는 GITHUB_TOKEN 필요)
+junvis scan --github djkdb      # 남의 공개 저장소
+junvis scan --github --dry-run  # 등록 전에 목록만
+junvis scan --github --forks --archived   # 기본으로 빼는 것들까지
+```
+
+포크와 보관된 저장소는 기본으로 뺀다 — 포크는 남의 코드고, 보관된 것은 끝난 일이다. 로그인은 `gh auth login` 이면 충분하다. 토큰을 환경변수에 둘 필요가 없다.
 
 ### 2. Creator Mode — ZUN 브랜드 콘텐츠를 만든다
 

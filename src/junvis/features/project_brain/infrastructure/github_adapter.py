@@ -9,32 +9,30 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import urllib.error
 import urllib.request
 
 from junvis.features.project_brain.domain.model import IssueRef
+from junvis.features.project_brain.infrastructure.github_auth import (
+    TOKEN_ENV_VARS,
+    resolve_token,
+)
 from junvis.features.project_brain.domain.value_objects import RepoRef
 
 logger = logging.getLogger(__name__)
 
 API_ROOT = "https://api.github.com"
 TIMEOUT_SECONDS = 8
-TOKEN_ENV_VARS = ("JUNVIS_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN")
+
+__all__ = ["GitHubIssueAdapter", "API_ROOT", "TOKEN_ENV_VARS"]
 
 
 class GitHubIssueAdapter:
     def __init__(self, token: str | None = None, api_root: str = API_ROOT) -> None:
-        self._token = token or self._token_from_env()
+        # 토큰 찾는 법은 한 곳에서 정한다. 이슈 조회와 저장소 목록이 서로
+        # 다르게 찾으면 한쪽만 되는 상태가 생긴다.
+        self._token = resolve_token(token)
         self._api_root = api_root.rstrip("/")
-
-    @staticmethod
-    def _token_from_env() -> str | None:
-        for name in TOKEN_ENV_VARS:
-            value = os.environ.get(name)
-            if value:
-                return value
-        return None
 
     def open_issues(self, repo: RepoRef, *, limit: int = 10) -> tuple[IssueRef, ...]:
         if "github.com" not in repo.host:
