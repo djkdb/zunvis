@@ -184,6 +184,10 @@ junvis say "안녕하세요"        # TTS 확인
 
 **오브는 아무것도 결정하지 않는다.** 꺼도, 죽어도 명령은 그대로 실행된다.
 
+말하는 중에 **"그만"** 하면 멈춘다. 이름을 부르면 하던 말을 끊고 새 명령을 받는다. 말하는 동안에는 이름을 부르거나 정지어를 말해야 통과하는데, 그러지 않으면 자기 목소리가 돌아와 무한 루프가 된다 — 실제로 겪었다([docs/10 §9](docs/10-REFERENCE-SURVEY.md)).
+
+호출어는 **자모로 펴서** 견준다. "자비스"를 "자비수"로 흘려 들어도 깨어난다. 음절 단위로 보면 0.667이라 못 잡는다.
+
 `--native`는 **맥 내장 음성 인식**을 쓴다. brew도, Whisper 모델 내려받기도,
 Swift 컴파일도 필요 없다 — PyObjC로 `SFSpeechRecognizer`를 직접 부른다.
 
@@ -218,6 +222,12 @@ $ junvis reel "MCP 서버 만들기"
 회상과 주입은 다른 일이다. 회상 결과를 그대로 프롬프트에 부으면 로컬 소형 모델이 무너지므로, `digest()`가 고정된 것 먼저 → 중복 제거 → 점수 순으로 예산 안에 압축한다.
 
 **무엇을 기억하지 않을지가 더 중요하다.** 발행한 콘텐츠와 시작한 프로젝트는 자동으로 기억하지만, 음성 명령은 남기지 않는다 — 말한 것을 전부 저장하면 잡음이 신호를 덮는다.
+
+대화는 예외인데, 통째로 저장하지 않기 때문이다. Mem0의 2단계를 가져왔다([docs/10 §3](docs/10-REFERENCE-SURVEY.md)) — 모델이 **오래 갈 사실만** 뽑고 잡담에는 빈 목록을 돌려준다. 그다음 기존 기억과 견줘 ADD/UPDATE/NONE을 고른다. 이 두 번째 단계가 없으면 "Ollama를 쓴다"가 "Claude를 쓴다"로 바뀌어도 둘 다 남는다.
+
+답한 뒤 **비동기로** 돈다. 작은 모델만 쓰고, 없으면 조용히 포기한다.
+
+**비밀은 저장 전에 지운다.** Trace와 기억에 들어가기 전에 `sk-`·`ghp_`·개인키·`TOKEN=값` 꼴을 `[비밀]`로 바꾼다. 한 번 들어가면 백업에도, digest에도, 릴스 프롬프트에도 실린다.
 
 ### 6. MCP Host — 남의 도구를 쓴다
 
@@ -270,6 +280,11 @@ junvis mcp list
 | `junvis_project_register` | `junvis_content_dismiss` | `junvis_memories` | |
 | `junvis_project_remember` | `junvis_content_published` | `junvis_forget` | |
 | `junvis_project_refresh` | `junvis_brand_voice` | `junvis_pin_memory` | |
+
+도구 말고도 내놓는다.
+
+- **리소스** — 프로젝트 하나가 `junvis://project/<slug>` 하나다. 도구는 모델이 부를 생각을 해야 쓰이지만, 리소스는 **사람이** 파일처럼 붙인다.
+- **프롬프트** — `reel` · `brief` · `project_review`. 슬래시 명령으로 뜬다.
 
 세션을 시작할 때 `junvis_project_context`를 부르면 목적·기술스택·아키텍처·최근 커밋·TODO·이슈·메모·README가 토큰 예산에 맞춰 조립되어 주입된다.
 
