@@ -192,3 +192,25 @@ def test_extraction_uses_the_fast_role() -> None:
 
     assert model.calls[0].role is ModelRole.FAST
     assert model.calls[0].temperature < 0.3  # 사실 추출에 창의성은 해롭다
+
+
+def test_a_secret_never_reaches_storage(tmp_path) -> None:
+    """대화에서 뽑아 오므로 여기로도 들어온다. digest와 릴스 프롬프트까지 간다."""
+    from junvis.core.eventbus.bus import EventBus
+    from junvis.core.persistence import CORE_MIGRATIONS, MEMORY, Database
+    from junvis.features.memory.application.use_cases.remember import RememberFact
+    from junvis.features.memory.infrastructure import MEMORY_MIGRATIONS
+    from junvis.features.memory.infrastructure.sqlite_repository import (
+        SqliteMemoryRepository,
+    )
+
+    db = Database(MEMORY)
+    db.migrate(CORE_MIGRATIONS, MEMORY_MIGRATIONS)
+    try:
+        remember = RememberFact(SqliteMemoryRepository(db), EventBus(), db.transaction)
+        view = remember("배포 키는 ghp_abcdefghijklmnopqrstuvwxyz0123456789 이다")
+
+        assert "ghp_" not in view.text
+        assert "[비밀]" in view.text
+    finally:
+        db.close()

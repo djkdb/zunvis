@@ -6,6 +6,7 @@ from junvis.core.eventbus.bus import EventBus
 from junvis.core.policy.engine import PolicyEngine
 from junvis.core.ports import ClockPort, SystemClock, UnitOfWorkPort
 from junvis.core.trace.recorder import TraceRecorder
+from junvis.core.redact import redact
 from junvis.core.usecase import TracedUseCase
 from junvis.features.memory.application.dto import MemoryView
 from junvis.features.memory.domain.errors import MemoryNotFound
@@ -51,6 +52,10 @@ class RememberFact(TracedUseCase):
             if self._policy is not None:
                 self._policy.guard("memory.remember", subject or scope.value)
 
+            # 비밀은 들어오기 전에 지운다. 자동 추출이 대화에서 뽑아 오고,
+            # 사용자가 직접 넣을 수도 있다. 한 번 들어가면 digest에도,
+            # 릴스 프롬프트에도 실린다(docs/10 §6).
+            text = redact(text)
             entry = MemoryEntry.create(
                 text,
                 scope=scope,

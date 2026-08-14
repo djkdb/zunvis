@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from junvis.core.eventbus.bus import EventBus
+from junvis.core.redact import redact
 from junvis.core.trace.model import Outcome, ToolCall, Trace, TraceCompleted, TraceStore
 
 
@@ -32,7 +33,7 @@ class TraceHandle:
         self._trace.cost += cost
 
     def annotate(self, **context: Any) -> None:
-        self._trace.context.update(context)
+        self._trace.context.update(_clean(context))
 
     @contextmanager
     def tool(self, name: str, **arguments: Any) -> Iterator[ToolCall]:
@@ -59,7 +60,8 @@ class TraceRecorder:
     def record(
         self, request: str, *, model: str | None = None, **context: Any
     ) -> Iterator[TraceHandle]:
-        trace = Trace(request=request, model=model, context=dict(context))
+        # 비밀은 남기기 **전에** 지운다. 한 번 들어가면 백업에도 실린다.
+        trace = Trace(request=request, model=model, context=_clean(context))
         handle = TraceHandle(trace)
         started = time.perf_counter()
         try:
@@ -86,3 +88,15 @@ class TraceRecorder:
                     )
             except Exception:  # pragma: no cover - 방어적
                 pass
+
+
+def _clean(context: dict[str, Any]) -> dict[str, Any]:
+    """Trace의 문자열 값에서 비밀을 지운다(docs/10 §6).
+
+    Trace는 **모든 유스케이스의 입력**을 남긴다. 프로젝트 경로, 릴스 주제,
+    음성 명령이 전부 지나간다. 그중 하나에 토큰이 섞이면 그대로 저장된다.
+    """
+    return {
+        key: redact(value) if isinstance(value, str) else value
+        for key, value in context.items()
+    }

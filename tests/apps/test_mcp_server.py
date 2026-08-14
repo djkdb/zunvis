@@ -126,6 +126,29 @@ def test_full_mcp_roundtrip(tmp_path: Path) -> None:
                 assert "썸네일은 항상 3단어 이하" in markdown
                 assert context.structured_content["truncated"] is False
 
+                # 6-b. 리소스 — 사람이 파일처럼 붙이는 통로
+                #
+                # 도구는 모델이 "부를 생각을 해야" 쓰인다. 리소스는 사람이
+                # 고른다. Context Pack은 이름부터가 resource다.
+                resources = await session.list_resources()
+                uris = {str(r.uri) for r in resources.resources}
+                assert "junvis://project/reels-editor" in uris
+                assert any(r.name == "릴스 편집기" for r in resources.resources)
+
+                read = await session.read_resource("junvis://project/reels-editor")
+                body = read.contents[0].text
+                assert body.startswith("# 릴스 편집기 (reels-editor)")
+                assert "썸네일은 항상 3단어 이하" in body
+
+                # 6-c. 프롬프트 — 슬래시 명령이 된다
+                prompts = await session.list_prompts()
+                assert {p.name for p in prompts.prompts} >= {"reel", "brief"}
+
+                got = await session.get_prompt("reel", {"subject": "MCP 서버 만들기"})
+                asked = got.messages[0].content.text
+                assert "MCP 서버 만들기" in asked
+                assert "junvis_content_create" in asked  # 우리 도구를 짚어 준다
+
                 # 7. 검색
                 found = await session.call_tool(
                     "junvis_project_search", {"query": "브랜드"}

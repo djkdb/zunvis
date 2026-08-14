@@ -19,6 +19,12 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from junvis.apps.container import Junvis, build
+from junvis.apps.mcp_server.exposure import (
+    PROMPTS,
+    build_prompt,
+    list_projects_as_resources,
+    read_project_resource,
+)
 from junvis.core.domain.errors import JunvisError
 from junvis.core.mcp.host_tools import ArgumentConfirmer, build_host_tools
 from junvis.features.brief.interface.mcp_tools import build_brief_tools
@@ -138,12 +144,76 @@ def create_server(
             structuredContent=result.data or None,
         )
 
+    # -- 리소스: 사람이 붙이는 것 -------------------------------------------
+    #
+    # 지금까지는 Claude Code가 `junvis_project_context`를 **부를 생각을 해야**
+    # 컨텍스트가 갔다. 리소스로 내놓으면 사람이 파일처럼 붙인다.
+
+    async def on_list_resources(_ctx, _params) -> types.ListResourcesResult:
+        found = await anyio.to_thread.run_sync(
+            lambda: list_projects_as_resources(container)
+        )
+        return types.ListResourcesResult(
+            resources=[
+                types.Resource(
+                    uri=uri, name=name, description=detail, mimeType="text/markdown"
+                )
+                for uri, name, detail in found
+            ]
+        )
+
+    async def on_read_resource(_ctx, params) -> types.ReadResourceResult:
+        uri = str(params.uri)
+        async with lock:
+            text = await anyio.to_thread.run_sync(
+                lambda: read_project_resource(container, uri)
+            )
+        return types.ReadResourceResult(
+            contents=[
+                types.TextResourceContents(
+                    uri=params.uri, mimeType="text/markdown", text=text
+                )
+            ]
+        )
+
+    # -- 프롬프트: 시작점 -----------------------------------------------------
+
+    async def on_list_prompts(_ctx, _params) -> types.ListPromptsResult:
+        return types.ListPromptsResult(
+            prompts=[
+                types.Prompt(
+                    name=name,
+                    description=description,
+                    arguments=[
+                        types.PromptArgument(name=argument, required=False)
+                        for argument in argument_names
+                    ],
+                )
+                for name, description, argument_names in PROMPTS
+            ]
+        )
+
+    async def on_get_prompt(_ctx, params) -> types.GetPromptResult:
+        body = build_prompt(params.name, dict(params.arguments or {}))
+        return types.GetPromptResult(
+            messages=[
+                types.PromptMessage(
+                    role="user",
+                    content=types.TextContent(type="text", text=body),
+                )
+            ]
+        )
+
     return Server(
         SERVER_NAME,
         version=SERVER_VERSION,
         instructions=INSTRUCTIONS,
         on_list_tools=on_list_tools,
         on_call_tool=on_call_tool,
+        on_list_resources=on_list_resources,
+        on_read_resource=on_read_resource,
+        on_list_prompts=on_list_prompts,
+        on_get_prompt=on_get_prompt,
     )
 
 
