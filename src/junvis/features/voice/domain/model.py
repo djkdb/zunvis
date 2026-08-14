@@ -29,6 +29,14 @@ ADDRESS_PREFIXES = ("헤이", "야", "hey", "ok", "오케이")
 
 #: 에코로 판정할 유사도. 낮추면 사용자가 따라 말할 때도 막힌다.
 DEFAULT_ECHO_THRESHOLD = 0.8
+
+#: 호출어 퍼지 매칭 문턱. STT는 "자비스"를 "자비수"로 흘려 듣는다.
+#: 정확 일치만 보면 그때 JUNVIS는 깨어나지 않는다.
+DEFAULT_WAKE_FUZZY = 0.78
+
+#: 이보다 짧은 토큰은 퍼지 매칭하지 않는다.
+#: 두 글자는 "준비" vs "준비스"가 0.8로 걸린다 — 흔한 말이 이름이 된다.
+MIN_FUZZY_TOKEN = 3
 #: 에코 창. 스피커 소리가 마이크로 돌아오는 데 걸리는 시간이면 충분하다.
 DEFAULT_ECHO_WINDOW = timedelta(seconds=8)
 #: 응답 직후 호출어 없이 말할 수 있는 시간.
@@ -36,6 +44,10 @@ DEFAULT_FOLLOW_UP_WINDOW = timedelta(seconds=12)
 
 #: 최근 발화를 몇 개까지 기억할지. 에코 판정에만 쓰므로 짧게 유지한다.
 MAX_REMEMBERED_UTTERANCES = 5
+
+#: 말을 끊는 말. 호출어 없이도 통한다 — 끊고 싶은데 이름부터 불러야 하면
+#: 그때는 이미 끝까지 들은 뒤다.
+STOP_WORDS = ("그만", "됐어", "됐다", "멈춰", "그쳐", "stop", "됐어요", "그만해")
 
 
 def normalize(text: str) -> str:
@@ -52,6 +64,59 @@ def loose(token: str) -> re.Pattern[str]:
     """
     letters = [re.escape(ch) for ch in token if not ch.isspace()]
     return re.compile(r"\s*".join(letters), re.IGNORECASE)
+
+
+#: 한글 음절 분해용. 유니코드가 산술로 정의해 두었으므로 표가 필요 없다.
+_HANGUL_BASE = 0xAC00
+_CHOSUNG = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+_JUNGSUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+_JONGSUNG = " ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"
+
+
+def jamo(text: str) -> str:
+    """한글을 자모로 편다.
+
+    음절 단위로 비교하면 유사도가 뭉툭하다. "자비스"와 "자비수"는 세 글자
+    중 하나가 다르니 0.667이고, 이름을 흘려 들은 것치고는 너무 낮게 나온다.
+    자모로 펴면 ㅅㅜ와 ㅅㅡ의 차이 — 모음 하나 — 로 드러나 0.833이 된다.
+
+    STT의 오인식은 대개 이런 모양이다. 음절이 통째로 바뀌는 것이 아니라
+    모음이나 받침 하나가 흔들린다.
+    """
+    out = []
+    for char in text:
+        code = ord(char) - _HANGUL_BASE
+        if 0 <= code < 11172:
+            out.append(_CHOSUNG[code // 588])
+            out.append(_JUNGSUNG[(code % 588) // 28])
+            final = _JONGSUNG[code % 28]
+            if final != " ":
+                out.append(final)
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def partial_ratio(short: str, long: str) -> float:
+    """짧은 쪽이 긴 쪽 **어디엔가** 얼마나 들어 있는가.
+
+    `SequenceMatcher`를 통째로 쓰면 길이 차이에 유사도가 묻힌다. 긴 대답
+    안에서 들린 만큼의 창을 훑어 최고점을 찾는다 — 에코가 앞이든 중간이든
+    잡힌다. `rapidfuzz.partial_ratio`가 하는 일과 같고, 의존성을 늘리지
+    않으려고 표준 라이브러리로 쓴다.
+    """
+    if not short or not long:
+        return 0.0
+    if len(short) > len(long):
+        short, long = long, short
+
+    best = 0.0
+    for start in range(len(long) - len(short) + 1):
+        window = long[start : start + len(short)]
+        best = max(best, SequenceMatcher(None, short, window).ratio())
+        if best == 1.0:
+            break
+    return best
 
 
 def squash(text: str) -> str:
@@ -91,6 +156,8 @@ class Presence(str, Enum):
 
 class GateDecision(str, Enum):
     ACT = "act"
+    #: 말하는 중에 "그만"을 들었다. 실행이 아니라 중단이다.
+    STOP = "stop"
     IGNORE_EMPTY = "ignore_empty"
     IGNORE_ECHO = "ignore_echo"
     IGNORE_NO_WAKE_WORD = "ignore_no_wake_word"
@@ -105,6 +172,7 @@ class GateDecision(str, Enum):
     def reason(self) -> str:
         return {
             GateDecision.ACT: "명령으로 인식",
+            GateDecision.STOP: "그만하라고 하셔서 멈췄습니다",
             GateDecision.IGNORE_EMPTY: "빈 발화",
             GateDecision.IGNORE_ECHO: "내가 방금 한 말의 반향",
             GateDecision.IGNORE_NO_WAKE_WORD: "호출어 없음",
@@ -137,6 +205,7 @@ class WakeWordConfig:
     echo_threshold: float = DEFAULT_ECHO_THRESHOLD
     echo_window: timedelta = DEFAULT_ECHO_WINDOW
     follow_up_window: timedelta = DEFAULT_FOLLOW_UP_WINDOW
+    wake_fuzzy: float = DEFAULT_WAKE_FUZZY
 
     @staticmethod
     def with_words(words: tuple[str, ...]) -> WakeWordConfig:
@@ -160,7 +229,36 @@ class WakeWordConfig:
                     return True
             elif target in words:
                 return True
+        return self._sounds_like_my_name(utterance)
+
+    def _sounds_like_my_name(self, utterance: Utterance) -> bool:
+        """STT가 이름을 흘려 들었을 때를 건진다.
+
+        "자비스"가 "자비수"로 오면 정확 일치는 못 잡는다. 토큰 하나씩
+        호출어와 견줘 충분히 비슷하면 부른 것으로 본다.
+
+        **짧은 토큰은 보지 않는다.** "준비"와 "준비스"는 0.8로 걸리는데,
+        흔한 말이 이름이 되면 아무 때나 깨어난다.
+        """
+        for token in utterance.normalized.split():
+            if len(token) < MIN_FUZZY_TOKEN:
+                continue
+            for wake in self.words:
+                target = normalize(wake)
+                if len(target) < MIN_FUZZY_TOKEN:
+                    continue
+                ratio = SequenceMatcher(None, jamo(target), jamo(token)).ratio()
+                if ratio >= self.wake_fuzzy:
+                    return True
         return False
+
+    def is_stop_command(self, utterance: Utterance) -> bool:
+        """말을 끊으라는 말인가.
+
+        모델에게 묻지 않는다. 끊는 데 몇 초가 걸리면 끊는 의미가 없다.
+        """
+        squashed = squash(self.strip_wake_word(utterance))
+        return any(squash(word) == squashed for word in STOP_WORDS)
 
     def strip_wake_word(self, utterance: Utterance) -> str:
         """명령 본문만 남긴다.
@@ -222,33 +320,52 @@ class ListenerState:
             # 짧은 발화는 유사도가 튀므로 포함 관계도 함께 본다.
             if heard in spoken or spoken in heard:
                 return True
-            if SequenceMatcher(None, heard, spoken).ratio() >= threshold:
-                return True
-            # 에코는 대개 앞부분만 잘려 돌아온다. 긴 대답 전체와 비교하면
-            # 유사도가 묻히므로, 들린 길이만큼의 **앞부분**과 견준다.
-            # "8월 12일 브리핑입니다…"를 "8월 11일 브리핑 입니다"로 흘려
-            # 들어도 이쪽에서 잡힌다.
-            prefix = spoken[: len(heard)]
-            if SequenceMatcher(None, heard, prefix).ratio() >= threshold:
+            # 에코는 대답의 **일부만** 잘려 돌아온다. 앞이든 중간이든.
+            # 전체와 비교하면 길이 차이에 유사도가 묻히므로 부분 비교를 쓴다.
+            if partial_ratio(heard, spoken) >= threshold:
                 return True
         return False
 
 
 def gate(
-    utterance: Utterance, config: WakeWordConfig, state: ListenerState
+    utterance: Utterance,
+    config: WakeWordConfig,
+    state: ListenerState,
+    *,
+    speaking: bool = False,
 ) -> GateDecision:
     """게이트 1~3. 모델을 부르기 전에 걸러낼 수 있는 것을 전부 걸러낸다.
 
     순서가 중요하다. 에코 판정이 호출어 판정보다 **먼저**여야 한다 —
     JUNVIS가 "자비스가 뭘 도와드릴까요"라고 말했을 때 그 소리가 돌아오면
     호출어를 포함하고 있기 때문이다.
+
+    `speaking`은 JUNVIS가 지금 말하는 중인지다. 그때는 마이크로 들어오는
+    것의 대부분이 자기 목소리라 규칙이 하나 더 붙는다(아래).
     """
     if utterance.is_blank:
         return GateDecision.IGNORE_EMPTY
+
+    # 정지는 에코 판정보다 먼저다. "그만"은 짧아서 긴 대답 안 어딘가와
+    # 우연히 닮을 수 있는데, 그때 못 멈추면 사용자는 갇힌다.
+    if speaking and config.is_stop_command(utterance):
+        return GateDecision.STOP
+
     if state.sounds_like_echo(
         utterance, threshold=config.echo_threshold, window=config.echo_window
     ):
         return GateDecision.IGNORE_ECHO
+
+    if speaking:
+        # 말하는 동안에는 **이름을 불러야** 끼어들 수 있다. 후속 발화 창은
+        # 여기서 통하지 않는다 — 창이 열린 채 자기 목소리가 돌아오면
+        # 에코 필터를 한 번만 빠져나가도 무한 루프가 된다. 실제로 그랬다.
+        return (
+            GateDecision.ACT
+            if config.contains_wake_word(utterance)
+            else GateDecision.IGNORE_ECHO
+        )
+
     if config.contains_wake_word(utterance):
         return GateDecision.ACT
     if state.is_awake(utterance.heard_at):

@@ -33,9 +33,21 @@ class IntentJudgePort(Protocol):
 class TextToSpeechPort(Protocol):
     #: 실제로 소리가 나는 구현인가. False면 받아들이기만 하고 들리지는 않는다.
     audible: bool
+    #: 지금 말하는 중인가. 게이트가 이걸 보고 규칙을 바꾼다.
+    speaking: bool
 
     def speak(self, text: str) -> bool:
-        """받아들였으면 True. 실패해도 예외를 던지지 않는다."""
+        """말하기를 **시작한다.** 받아들였으면 True.
+
+        끝날 때까지 기다리지 않는다. 기다리면 그동안 마이크를 못 읽어서
+        말을 끊을 수도, 끼어들 수도 없다. 실패해도 예외를 던지지 않는다.
+        """
+
+    def stop(self) -> None:
+        """말하는 중이면 끊는다."""
+
+    def wait(self) -> None:
+        """끝날 때까지 기다린다. 듣기 루프는 부르지 않는다."""
 
 
 class AudioSourcePort(Protocol):

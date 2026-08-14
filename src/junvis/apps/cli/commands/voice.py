@@ -82,6 +82,8 @@ def cmd_orb(args, junvis: Junvis) -> int:
 
 def cmd_say(args, junvis: Junvis) -> int:
     spoken = junvis.voice.tts.speak(args.text)
+    # 여기서는 끝까지 기다린다. 안 기다리면 프로세스가 먼저 죽어 소리가 잘린다.
+    junvis.voice.tts.wait()
     if not junvis.voice.tts.audible:
         # 소리가 나지 않는 구현이면 사실대로 말한다. 조용히 0을 돌려주면
         # 사용자는 스피커가 고장 났다고 생각한다.
@@ -134,7 +136,7 @@ def _make_source(args, junvis: Junvis):
 
 
 def cmd_listen(args, junvis: Junvis) -> int:
-    from junvis.features.voice.domain.model import ListenerState
+    from junvis.features.voice.domain.model import GateDecision, ListenerState
     from junvis.features.voice.infrastructure.audio import AudioUnavailable
 
     try:
@@ -146,6 +148,7 @@ def cmd_listen(args, junvis: Junvis) -> int:
     print(greeting, file=sys.stderr)
     print(f"호출어: {', '.join(junvis.voice.config.words)}", file=sys.stderr)
     print(f"할 수 있는 말: {'  ·  '.join(junvis.voice.examples)}", file=sys.stderr)
+    print("말하는 중에 \"그만\" 하면 멈춥니다.", file=sys.stderr)
 
     state = ListenerState()
     try:
@@ -155,15 +158,10 @@ def cmd_listen(args, junvis: Junvis) -> int:
             if outcome.acted:
                 print(f"< {utterance.text}")
                 print(f"> {outcome.response}")
+            elif outcome.decision is GateDecision.STOP:
+                print("  (멈췄습니다)", file=sys.stderr)
             else:
                 print(f"  (무시: {outcome.decision.reason})", file=sys.stderr)
-
-            if outcome.acted:
-                # 방금 JUNVIS가 말했다. 그동안 마이크에 들어온 것은 전부
-                # 자기 목소리다. 소스가 버릴 수 있으면 버린다.
-                discard = getattr(source, "discard_pending", None)
-                if discard is not None:
-                    discard()
             junvis.drain()
     except KeyboardInterrupt:
         print("\n종료합니다.", file=sys.stderr)

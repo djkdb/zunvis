@@ -223,3 +223,62 @@ def test_a_real_command_is_not_an_echo() -> None:
 def test_repeating_a_command_after_an_answer_still_works() -> None:
     """같은 명령을 한 번 더 시키는 것은 정당하다."""
     assert not _echoed("오늘 브리핑", "등록된 프로젝트가 없습니다.")
+
+
+# -- 호출어 퍼지 매칭 --------------------------------------------------------
+
+
+def _heard(text: str) -> bool:
+    from junvis.features.voice.domain.model import Utterance, WakeWordConfig
+
+    return WakeWordConfig().contains_wake_word(Utterance(text=text))
+
+
+def test_a_misheard_name_still_wakes() -> None:
+    """STT는 "자비스"를 흘려 듣는다. 정확 일치만 보면 못 깨어난다."""
+    assert _heard("자비수 오늘 브리핑")
+    assert _heard("자비스가 뭐래")
+    assert _heard("jarvus what")
+
+
+def test_ordinary_words_do_not_wake() -> None:
+    """흔한 말이 이름이 되면 아무 때나 깨어난다. 이게 더 나쁘다."""
+    for said in [
+        "준비 다 됐어",
+        "회의 준비하자",
+        "커피 마실래",
+        "자기 전에 뭐 하지",
+        "오늘 점심 뭐 먹지",
+        "자리 비웠어",
+    ]:
+        assert not _heard(said), said
+
+
+# -- 부분 유사도 -------------------------------------------------------------
+
+
+def test_partial_ratio_finds_the_echo_anywhere() -> None:
+    """에코는 대답의 일부만 잘려 돌아온다. 앞이든 중간이든."""
+    from junvis.features.voice.domain.model import partial_ratio
+
+    answer = "8월 12일 브리핑입니다 작업 습관 최근 7일 동안 10번 작업했습니다"
+
+    assert partial_ratio("8월 12일 브리핑입니다", answer) == 1.0
+    assert partial_ratio("최근 7일 동안", answer) == 1.0        # 중간
+    assert partial_ratio("릴스 만들어줘", answer) < 0.6          # 남의 말
+    assert partial_ratio("", answer) == 0.0
+
+
+def test_jamo_spreads_hangul() -> None:
+    """음절로 보면 "자비스"와 "자비수"가 0.667이다. 자모로 펴면 드러난다."""
+    from difflib import SequenceMatcher
+
+    from junvis.features.voice.domain.model import jamo
+
+    assert jamo("자비스") == "ㅈㅏㅂㅣㅅㅡ"
+    assert jamo("준") == "ㅈㅜㄴ"          # 받침도 편다
+    assert jamo("junvis") == "junvis"     # 한글이 아니면 그대로
+
+    syllables = SequenceMatcher(None, "자비스", "자비수").ratio()
+    spread = SequenceMatcher(None, jamo("자비스"), jamo("자비수")).ratio()
+    assert syllables < 0.7 < spread

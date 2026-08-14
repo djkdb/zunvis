@@ -68,9 +68,16 @@ class HandleUtterance:
         self._presence = presence
 
     def __call__(self, utterance: Utterance, state: ListenerState) -> VoiceOutcome:
-        decision = gate(utterance, self._config, state)
+        decision = gate(
+            utterance, self._config, state, speaking=self._speaking()
+        )
+        if decision is GateDecision.STOP:
+            return self._stop(state)
         if not decision.is_act:
             return self._ignore(utterance, decision, state)
+
+        # 끼어든 것이다. 하던 말을 멈추고 새 명령을 듣는다.
+        self._tts.stop()
 
         followed_up = not self._config.contains_wake_word(utterance)
         command = self._config.strip_wake_word(utterance)
@@ -101,6 +108,16 @@ class HandleUtterance:
         except Exception as exc:
             logger.debug("Intent Judge 실패, 통과시킴: %s", exc)
             return True
+
+    def _speaking(self) -> bool:
+        return bool(getattr(self._tts, "speaking", False))
+
+    def _stop(self, state: ListenerState) -> VoiceOutcome:
+        """말을 끊는다. 답하지 않는다 — 답하면 또 말하는 것이다."""
+        self._tts.stop()
+        # 창은 열어 둔다. 끊었다는 것은 대개 다른 말을 하려는 것이다.
+        self._show(Presence.AWAKE, self._hint())
+        return VoiceOutcome(GateDecision.STOP, state=state)
 
     def _hint(self) -> str:
         """지금 말할 수 있는 것들. 라우터가 모르면 조용히 비운다."""

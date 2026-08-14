@@ -292,3 +292,103 @@ def test_a_handler_without_examples_is_fine(bus) -> None:
     use_case(heard("자비스"), ListenerState())
 
     assert presence.shown[-1] == ("awake", "")
+
+
+# -- 말하는 중 (끼어들기와 무한 루프) ----------------------------------------
+
+
+class TalkingTts(NullTts):
+    """말하는 중인 TTS. `speaking`을 우리가 조종한다."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.speaking = True
+
+    def stop(self) -> None:
+        super().stop()
+        self.speaking = False
+
+
+def talking(bus, handler=None):
+    tts = TalkingTts()
+    use_case = HandleUtterance(
+        FakeJudge(), handler or FakeHandler(), tts, bus, config=WakeWordConfig()
+    )
+    return use_case, tts
+
+
+def test_stop_interrupts_without_answering(bus) -> None:
+    """답하면 또 말하는 것이다. 멈추라는데 말을 걸면 안 된다."""
+    use_case, tts = talking(bus)
+
+    outcome = use_case(heard("그만"), ListenerState())
+
+    assert outcome.decision is GateDecision.STOP
+    assert tts.stopped >= 1
+    assert tts.spoken == []
+
+
+def test_stop_works_without_the_wake_word(bus) -> None:
+    """끊고 싶은데 이름부터 불러야 하면 그때는 이미 끝까지 들은 뒤다."""
+    use_case, tts = talking(bus)
+
+    for word in ["그만", "됐어", "멈춰", "stop"]:
+        tts.speaking = True
+        assert use_case(heard(word), ListenerState()).decision is GateDecision.STOP
+
+
+def test_calling_the_name_interrupts_and_runs(bus) -> None:
+    """말하는 도중에도 이름을 부르면 끼어들 수 있다."""
+    handler = FakeHandler("네, 했습니다")
+    use_case, tts = talking(bus, handler)
+
+    outcome = use_case(heard("자비스 프로젝트 목록"), ListenerState())
+
+    assert outcome.acted
+    assert handler.commands == ["프로젝트 목록"]
+    assert tts.stopped >= 1  # 하던 말을 끊었다
+
+
+def test_my_own_voice_during_speech_cannot_loop(bus) -> None:
+    """실제로 무한 루프를 만든 것.
+
+    말하는 동안에는 창이 열려 있어도 이름을 불러야 통과한다. 에코가
+    필터를 한 번 빠져나가도 여기서 막힌다.
+    """
+    use_case, _ = talking(bus)
+    open_window = ListenerState().with_spoken(
+        "8월 12일 브리핑입니다 작업 습관 최근 7일 동안 10번 작업했습니다",
+        NOW,
+        timedelta(seconds=12),
+    )
+
+    # 자기 대답을 흘려 들은 것 — 12일을 11일로.
+    outcome = use_case(
+        heard("8월 11일 브리핑 입니다 최근", NOW + timedelta(seconds=1)), open_window
+    )
+
+    assert not outcome.acted
+    assert outcome.decision is GateDecision.IGNORE_ECHO
+
+
+def test_ambient_speech_during_tts_is_not_a_command(bus) -> None:
+    """창이 열려 있어도 말하는 중이면 이름을 불러야 한다."""
+    use_case, _ = talking(bus)
+    open_window = ListenerState().with_spoken("네?", NOW, timedelta(seconds=12))
+
+    outcome = use_case(heard("점심 뭐 먹지", NOW + timedelta(seconds=1)), open_window)
+
+    assert not outcome.acted
+
+
+def test_when_silent_the_follow_up_window_still_works(bus) -> None:
+    """말이 끝난 뒤에는 호출어 없이 이어 말할 수 있어야 한다."""
+    handler = FakeHandler()
+    use_case = HandleUtterance(
+        FakeJudge(), handler, NullTts(), bus, config=WakeWordConfig()
+    )
+    open_window = ListenerState().with_spoken("네?", NOW, timedelta(seconds=12))
+
+    outcome = use_case(heard("프로젝트 목록", NOW + timedelta(seconds=1)), open_window)
+
+    assert outcome.acted
