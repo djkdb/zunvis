@@ -36,6 +36,10 @@ MODEL_ENV_VARS: dict[ModelRole, str] = {
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+#: 모델을 이만큼 메모리에 유지한다. 대가는 RAM이고, 얻는 것은 즉답이다.
+KEEP_ALIVE = os.environ.get("JUNVIS_OLLAMA_KEEP_ALIVE", "30m")
+
+
 def resolve_model(role: ModelRole) -> str:
     return os.environ.get(MODEL_ENV_VARS[role]) or DEFAULT_MODELS[role]
 
@@ -71,6 +75,12 @@ class OllamaAdapter:
             "messages": messages,
             "stream": False,
             "options": options,
+            # 모델을 메모리에 붙잡아 둔다. Ollama의 기본 유휴 시간은 5분이라
+            # 그동안 말을 안 걸면 모델이 내려가고, 다음 발화가 재적재 비용을
+            # 통째로 문다. 그 비용이 타임아웃을 부른다 — 판정기는 발화마다
+            # 도는 것이라 이 차이가 곧 "반응하지 않는 비서"가 된다.
+            # (isair/jarvis가 같은 결론에 도달했다: docs/10 §5)
+            "keep_alive": KEEP_ALIVE,
         }
         if request.schema is not None:
             # Ollama의 구조화 출력. 스키마를 그대로 넘기면 문법적으로 유효한

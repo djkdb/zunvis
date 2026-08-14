@@ -138,3 +138,27 @@ def test_connection_failure_gives_an_actionable_message() -> None:
 
 def test_installed_models_is_empty_when_unreachable() -> None:
     assert OllamaAdapter("http://127.0.0.1:1", timeout=2).installed_models() == []
+
+
+def test_ollama_keeps_the_model_resident() -> None:
+    """5분 유휴 후 재적재 비용이 판정기 타임아웃을 부른다.
+
+    판정기는 발화마다 돈다. 그 차이가 "반응하지 않는 비서"를 만든다.
+    """
+    import json
+    from unittest.mock import patch
+
+    from junvis.core.model.ollama import KEEP_ALIVE, OllamaAdapter
+    from junvis.core.model.ports import ModelRequest
+
+    sent = {}
+
+    def capture(self, path, body):
+        sent.update(body)
+        return {"message": {"content": "네"}, "model": "test"}
+
+    with patch.object(OllamaAdapter, "_post", capture):
+        OllamaAdapter().complete(ModelRequest(prompt="안녕"))
+
+    assert sent["keep_alive"] == KEEP_ALIVE
+    assert json.dumps(sent)  # 직렬화 가능해야 실제로 나간다

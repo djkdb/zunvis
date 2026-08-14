@@ -19,6 +19,7 @@
 | 임베딩 기반 도구 선별 | 토큰 겹침 랭커. 임베딩은 포트만 열어 둠 | [07 §3](07-MCP-HOST.md) |
 | `scheduler` Bounded Context | 만들지 않음. launchd가 한다 | [04 §0](04-DAILY-BRIEF.md) |
 | Plugin Architecture (`~/.junvis/plugins`) | **아직 없음.** 외부 MCP 서버가 그 자리를 대신하고 있다 | — |
+| Open Interpreter는 못 씀(1단계 결론) | **틀렸다.** Python SDK와 `interpreter exec`가 있다 | [10 §2](10-REFERENCE-SURVEY.md) |
 | Vision / Coding Agent | **아직 없음** | — |
 
 ### 현재 구현된 Bounded Context
@@ -406,6 +407,7 @@ class Project:                    # Aggregate Root
 | MCP Host | [07](07-MCP-HOST.md) | ✅ |
 | 네이티브 헬퍼 (상시 대기·박수) | [08](08-NATIVE-HELPER.md) | ✅ Python 쪽 / ⚠️ Swift 컴파일 미확인 |
 | 오브 (부르면 반응하는 화면) | [09](09-ORB.md) | ✅ |
+| 레퍼런스 전수조사 (소스 직접 읽음) | [10](10-REFERENCE-SURVEY.md) | ✅ |
 | Vision | — | 미착수 |
 | Coding Agent | — | 미착수 |
 | Plugin Architecture | 이 문서 §4 | 미착수 |
