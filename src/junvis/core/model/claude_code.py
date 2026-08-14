@@ -9,11 +9,16 @@
 프롬프트에는 문맥이 실려 길고, 따옴표·개행·한글이 섞인다. 인자로 넘기면
 셸 이스케이프와 길이 제한에 걸린다. stdin에는 그런 것이 없다.
 
-## 왜 파일을 고칠 수 있는 도구를 막는가
+## 왜 도구와 MCP를 전부 끄는가
 
-음성은 오인식이 잦은 입력이다. "자비스 그거 지워줘"가 잘못 들리면 무엇이
+두 가지 이유가 있고 둘 다 실제로 겪었다.
+
+**안전.** 음성은 오인식이 잦다. "자비스 그거 지워줘"가 잘못 들리면 무엇이
 지워질지 알 수 없다. 말로 시작된 작업이 조용히 파일을 고치면 안 된다.
-읽기 도구는 남겨 둔다 — 그것은 되돌릴 것이 없다.
+
+**속도.** MCP 서버가 붙어 있으면 `claude -p` 는 매 호출마다 그것들을 전부
+기동한다. 말 한마디에 90초가 걸려 대화가 통째로 타임아웃됐다. 문맥은 JUNVIS가
+직접 실어 주므로 Claude가 파일을 뒤질 이유가 없다.
 
 ## 왜 JUNVIS 홈에서 실행하는가
 
@@ -44,11 +49,16 @@ BINARY_ENV = "JUNVIS_CLAUDE_BIN"
 MODEL_ENV = "JUNVIS_CLAUDE_MODEL"
 DEFAULT_BINARY = "claude"
 
-#: 되돌릴 수 없는 것들. 말 한마디로 파일이 바뀌면 안 된다.
-FORBIDDEN_TOOLS = ("Bash", "Edit", "Write", "NotebookEdit")
+#: 전부 끈다. 안전(오인식)과 속도(기동 시간) 둘 다를 위해서다.
+#: 답에 필요한 사실은 JUNVIS가 프롬프트에 실어 준다.
+FORBIDDEN_TOOLS = (
+    "Bash", "Edit", "Write", "NotebookEdit",
+    "Read", "Grep", "Glob", "WebFetch", "WebSearch", "Task", "TodoWrite",
+)
 
-#: Claude는 생각한다. 짧게 자르면 답 대신 침묵을 받는다.
-DEFAULT_TIMEOUT = 90
+#: 도구와 MCP를 끄면 보통 5초 안쪽이다. 이보다 오래 걸리면 뭔가 잘못된
+#: 것이고, 말을 걸어 놓고 1분 넘게 기다리는 것은 대화가 아니다.
+DEFAULT_TIMEOUT = 45
 
 
 class ClaudeCodeAdapter:
@@ -93,6 +103,8 @@ class ClaudeCodeAdapter:
         argv = [self._binary, "-p", "--output-format", "text"]
         if self._model:
             argv += ["--model", self._model]
+        # MCP 설정을 주지 않은 채 strict를 켜면 서버가 하나도 뜨지 않는다.
+        argv += ["--strict-mcp-config"]
         argv += ["--disallowed-tools", *FORBIDDEN_TOOLS]
         return argv
 
@@ -117,7 +129,10 @@ class ClaudeCodeAdapter:
                 cwd=str(self._cwd) if self._cwd else None,
             )
         except subprocess.TimeoutExpired as exc:
-            raise ModelError(f"Claude가 {self._timeout}초 안에 답하지 않았습니다.") from exc
+            raise ModelError(
+                f"Claude가 {self._timeout}초 안에 답하지 않았습니다."
+                " 터미널에서 `claude -p 안녕` 이 되는지 확인해 주세요."
+            ) from exc
         except OSError as exc:
             raise ModelError(f"Claude를 실행하지 못했습니다: {exc}") from exc
 

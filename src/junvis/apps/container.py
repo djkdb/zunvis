@@ -260,6 +260,7 @@ def build(
     # 주입된 모델은 그대로 쓴다. 테스트가 넣은 것을 조립 루트가 몰래
     # 갈아 끼우면 무엇을 검증한 것인지 알 수 없게 된다.
     chat_model = resolved_model if model is not None else _conversation_brain(resolved_model)
+    judge_model = _judge_brain(resolved_model)
     memory = _build_memory(memory_repository, bus, policy, tracer, unit_of_work)
     projects = _build_project_brain(
         project_repository, bus, policy, tracer, unit_of_work, offline=offline
@@ -274,7 +275,7 @@ def build(
     )
     voice = _build_voice(
         bus, tracer, resolved_model, projects, creator, brief, memory,
-        tts=tts, root=root, chat_model=chat_model,
+        tts=tts, root=root, chat_model=chat_model, judge_model=judge_model,
     )
     mcp_config = McpConfig(root / CONFIG_FILENAME)
     mcp_host = McpHost(
@@ -403,6 +404,20 @@ def _build_brief(
 BRAIN_ENV = "JUNVIS_BRAIN"
 
 
+def _judge_brain(shared: ModelPort) -> ModelPort:
+    """게이트 4는 **절대** Claude로 하지 않는다.
+
+    이 판정은 발화마다 돈다. 거기에 `claude -p` 를 부르면 프로세스가 매번
+    새로 뜨고, MCP 서버가 붙어 있으면 그것까지 전부 기동한다. 실제로 말
+    한마디에 90초가 걸려 대화 자체가 타임아웃됐다.
+
+    "이게 나에게 한 말인가"는 작은 모델로 충분한 판정이다. Ollama가 꺼져
+    있으면 `LlmIntentJudge`가 fail-open으로 통과시킨다 — 사용자를 무시하는
+    것이 잘못 실행하는 것보다 나쁘기 때문이다.
+    """
+    return OllamaAdapter() if isinstance(shared, ClaudeCodeAdapter) else shared
+
+
 def _conversation_brain(shared: ModelPort) -> ModelPort:
     """대화만은 Claude에게 맡길 수 있다.
 
@@ -450,6 +465,7 @@ def _build_voice(
     tts: TextToSpeechPort | None,
     root: Path,
     chat_model: ModelPort,
+    judge_model: ModelPort,
 ) -> Voice:
     """라우터가 여러 Context를 안다. feature끼리는 여전히 서로를 모른다."""
     router = VoiceCommandRouter(
@@ -473,7 +489,7 @@ def _build_voice(
     presence = FilePresence(root / STATE_FILENAME)
     return Voice(
         handle=HandleUtterance(
-            LlmIntentJudge(model),
+            LlmIntentJudge(judge_model),
             router,
             resolved_tts,
             bus,

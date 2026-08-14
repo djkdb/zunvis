@@ -591,3 +591,27 @@ def test_plain_commands_still_run(talking, said: str) -> None:
     outcome = say(talking, f"자비스 {said}")
 
     assert outcome.response != "그건 이렇게 생각합니다."
+
+
+def test_the_intent_judge_never_uses_claude(tmp_path, monkeypatch) -> None:
+    """실제로 겪은 것: 판정이 발화마다 `claude -p` 를 띄워 90초가 걸렸다.
+
+    이 판정은 말 한마디마다 돈다. 프로세스가 매번 새로 뜨고 MCP 서버까지
+    기동하면 음성 인터페이스의 의미가 없어진다.
+    """
+    from junvis.apps.container import _judge_brain
+    from junvis.core.model.claude_code import ClaudeCodeAdapter
+    from junvis.core.model.ollama import OllamaAdapter
+
+    assert isinstance(_judge_brain(ClaudeCodeAdapter()), OllamaAdapter)
+
+    # Claude가 아니면 그대로 쓴다. 테스트가 넣은 모델을 갈아 끼우지 않는다.
+    scripted = ScriptedModel()
+    assert _judge_brain(scripted) is scripted
+
+
+def test_claude_starts_no_mcp_servers() -> None:
+    """MCP가 붙어 있으면 호출마다 전부 기동한다. 문맥은 JUNVIS가 싣는다."""
+    from junvis.core.model.claude_code import ClaudeCodeAdapter
+
+    assert "--strict-mcp-config" in ClaudeCodeAdapter().command()
