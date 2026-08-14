@@ -30,6 +30,8 @@ import logging
 from collections import deque
 from dataclasses import dataclass
 
+from junvis.core.domain.event import DomainEvent
+from junvis.core.eventbus.bus import EventBus
 from junvis.core.model.ports import ModelError, ModelPort, ModelRequest, ModelRole
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,22 @@ class Turn:
     answer: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class ConversationHappened(DomainEvent):
+    """대화 한 번이 끝났다.
+
+    조립 루트에 있는 이유는 라우터와 같다 — 대화는 여러 Context에 걸쳐 있어
+    어느 feature의 사건도 아니다.
+
+    이 이벤트는 **비동기로** 소비된다. 여기 붙는 것(자동 기억)이 모델을
+    두 번 더 부르는데, 그걸 동기로 하면 답을 듣고 나서 또 기다리게 된다.
+    """
+
+    topic = "conversation.happened"
+    question: str
+    answer: str
+
+
 class Conversation:
     def __init__(
         self,
@@ -76,6 +94,7 @@ class Conversation:
         digest=None,
         get_brand_voice=None,
         commands: tuple[str, ...] = (),
+        bus: EventBus | None = None,
         history_turns: int = HISTORY_TURNS,
     ) -> None:
         self._model = model
@@ -83,6 +102,7 @@ class Conversation:
         self._digest = digest
         self._get_brand_voice = get_brand_voice
         self._commands = commands
+        self._bus = bus
         self._history: deque[Turn] = deque(maxlen=history_turns)
 
     def __call__(self, question: str) -> str:
@@ -110,6 +130,8 @@ class Conversation:
         if not text:
             return OFFLINE_ANSWER
         self._history.append(Turn(question, text))
+        if self._bus is not None:
+            self._bus.publish(ConversationHappened(question=question, answer=text))
         return text
 
     def forget(self) -> None:

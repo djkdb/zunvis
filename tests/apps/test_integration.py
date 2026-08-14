@@ -34,6 +34,7 @@ class ScriptedModel:
         self.calls: list = []
         self.judge_verdict = True
         self.chat_answer = "그건 이렇게 생각합니다."
+        self.facts: list[str] = []
 
     def complete(self, request):
         from junvis.core.model.ports import ModelResponse
@@ -42,6 +43,13 @@ class ScriptedModel:
         properties = (request.schema or {}).get("properties", {})
         if "is_command" in properties:
             body = json.dumps({"is_command": self.judge_verdict})
+        elif "facts" in properties:
+            body = json.dumps({"facts": self.facts}, ensure_ascii=False)
+        elif "decisions" in properties:
+            body = json.dumps(
+                {"decisions": [{"event": "ADD", "text": f} for f in self.facts]},
+                ensure_ascii=False,
+            )
         elif request.schema is None:
             # 스키마가 없으면 대화다. 사람에게 하는 말을 돌려준다.
             body = self.chat_answer
@@ -615,3 +623,31 @@ def test_claude_starts_no_mcp_servers() -> None:
     from junvis.core.model.claude_code import ClaudeCodeAdapter
 
     assert "--strict-mcp-config" in ClaudeCodeAdapter().command()
+
+
+# -- 대화에서 배운다 (Mem0의 2단계, docs/10 §3) --------------------------------
+
+
+def test_a_conversation_teaches_junvis(talking) -> None:
+    """답한 뒤 **비동기로** 배운다. 사용자를 기다리게 하지 않는다."""
+    talking.model.chat_answer = "그렇게 하겠습니다."
+    talking.model.facts = ["릴스 썸네일 문구는 세 단어 이하로 한다"]
+
+    say(talking, "자비스 썸네일은 세 단어 넘으면 안 읽히더라고")
+    assert talking.memory.list_all() == []  # 아직이다
+
+    talking.drain()
+
+    remembered = [m.text for m in talking.memory.list_all()]
+    assert "릴스 썸네일 문구는 세 단어 이하로 한다" in remembered
+
+
+def test_chatter_teaches_nothing(talking) -> None:
+    """말한 것을 전부 저장하면 잡음이 신호를 덮는다."""
+    talking.model.chat_answer = "안녕하세요."
+    talking.model.facts = []
+
+    say(talking, "자비스 그냥 인사해봤어")
+    talking.drain()
+
+    assert talking.memory.list_all() == []

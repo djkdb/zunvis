@@ -67,6 +67,9 @@ from junvis.features.memory.application.use_cases.queries import (
     ListMemories,
     RecallMemories,
 )
+from junvis.features.memory.application.use_cases.learn_from_dialogue import (
+    LearnFromDialogue,
+)
 from junvis.features.memory.application.use_cases.remember import (
     ForgetFact,
     PinFact,
@@ -163,6 +166,8 @@ class Memory:
     forget: ForgetFact
     pin: PinFact
     digest: BuildDigest
+    #: 대화에서 오래 갈 사실만 뽑아 기억한다(Mem0의 2단계, docs/10 §3).
+    learn: LearnFromDialogue
 
 
 @dataclass
@@ -261,7 +266,9 @@ def build(
     # 갈아 끼우면 무엇을 검증한 것인지 알 수 없게 된다.
     chat_model = resolved_model if model is not None else _conversation_brain(resolved_model)
     judge_model = _judge_brain(resolved_model)
-    memory = _build_memory(memory_repository, bus, policy, tracer, unit_of_work)
+    memory = _build_memory(
+        memory_repository, bus, policy, tracer, unit_of_work, judge_model
+    )
     projects = _build_project_brain(
         project_repository, bus, policy, tracer, unit_of_work, offline=offline
     )
@@ -284,7 +291,9 @@ def build(
 
     register_project_subscribers(bus, projects.refresh)
     register_creator_subscribers(bus, creator.suggest)
-    register_learning(bus, memory.remember)
+    # 자동 기억은 **작은 모델만** 쓴다. 대화 한 번에 호출이 둘 늘어나는데
+    # 거기에 Claude를 부르면 답을 듣고 나서 또 10초를 기다리게 된다.
+    register_learning(bus, memory.remember, learn=memory.learn)
 
     return Junvis(
         home=root,
@@ -303,17 +312,19 @@ def build(
     )
 
 
-def _build_memory(repository, bus, policy, tracer, unit_of_work) -> Memory:
+def _build_memory(repository, bus, policy, tracer, unit_of_work, model) -> Memory:
+    remember = RememberFact(repository, bus, unit_of_work, policy=policy, tracer=tracer)
+    recall = RecallMemories(repository, unit_of_work, policy=policy, tracer=tracer)
+    forget = ForgetFact(repository, bus, unit_of_work, policy=policy, tracer=tracer)
     return Memory(
-        remember=RememberFact(
-            repository, bus, unit_of_work, policy=policy, tracer=tracer
-        ),
-        recall=RecallMemories(repository, unit_of_work, policy=policy, tracer=tracer),
+        remember=remember,
+        recall=recall,
         list_all=ListMemories(repository, policy=policy, tracer=tracer),
-        forget=ForgetFact(repository, bus, unit_of_work, policy=policy, tracer=tracer),
+        forget=forget,
         pin=PinFact(repository, unit_of_work, policy=policy, tracer=tracer),
         # 프롬프트 조립용이라 Trace를 남기지 않는다(brief의 수집 조회와 같은 이유).
         digest=BuildDigest(repository),
+        learn=LearnFromDialogue(model, remember, recall, forget, tracer=tracer),
     )
 
 
@@ -480,6 +491,7 @@ def _build_voice(
         digest=memory.digest,
         get_brand_voice=creator.get_brand_voice,
         commands=router.examples(),
+        bus=bus,
     )
     # 라우터가 대화를 알아야 하고 대화가 라우터의 명령을 알아야 한다.
     # 순환이 아니라 한 방향씩이므로 만든 뒤에 이어 준다.
